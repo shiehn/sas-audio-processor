@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sas-processor"
+version = "1.0.0"
+description = "Audio processor for beat detection and bar-aligned trimming"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "SAS Audio"}
+]
+
+dependencies = [
+    "librosa>=0.10.0",
+    "soundfile>=0.12.0",
+    "numpy>=1.20.0,<2.0.0",
+    "click>=8.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pyinstaller>=6.0.0",
+]
+
+[project.scripts]
+sas-processor = "sas_processor.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+markers = [
+    "real_audio: tests that use real audio files from librosa",
+    "slow: tests that take a long time to run",
+    "binary: tests that require the compiled PyInstaller binary",
+]
+testpaths = ["tests"]
+addopts = "-v"
