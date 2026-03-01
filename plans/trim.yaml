@@ -1,0 +1,24 @@
+name: trim
+description: Trim audio starting at the first downbeat for a specified number of bars
+inputs:
+  input:
+    description: Path to input WAV file
+    required: true
+  output:
+    description: Path for output WAV file
+    required: true
+  bpm:
+    description: Beats per minute for the audio
+    required: true
+  bars:
+    description: Number of bars to keep
+    required: true
+  meter:
+    description: Time signature denominator (4 for 4/4, 3 for 3/4, etc)
+    required: false
+    default: "4"
+steps:
+  - id: trim
+    run: sas-processor trim --input "${{inputs.input}}" --output "${{inputs.output}}" --bpm "${{inputs.bpm}}" --bars "${{inputs.bars}}" --meter "${{inputs.meter}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout

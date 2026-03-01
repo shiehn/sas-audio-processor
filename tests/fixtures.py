@@ -294,11 +294,3 @@ def get_samples_with_clear_beats() -> list[str]:
         name for name, meta in LIBROSA_SAMPLES.items()
         if meta.has_clear_beats
     ]
-
-
-def get_samples_by_genre(genre: str) -> list[str]:
-    """Get list of samples for a specific genre."""
-    return [
-        name for name, meta in LIBROSA_SAMPLES.items()
-        if meta.genre == genre
-    ]

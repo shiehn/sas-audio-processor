@@ -1,0 +1,18 @@
+name: silence-remove
+description: Remove leading and trailing silence from audio
+inputs:
+  input:
+    description: Path to input WAV file
+    required: true
+  output:
+    description: Path for output WAV file
+    required: true
+  top_db:
+    description: Threshold in dB below reference for silence detection
+    required: false
+    default: "30"
+steps:
+  - id: silence_remove
+    run: sas-processor silence-remove --input "${{inputs.input}}" --output "${{inputs.output}}" --top-db "${{inputs.top_db}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout

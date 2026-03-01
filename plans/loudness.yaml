@@ -1,0 +1,11 @@
+name: loudness
+description: Measure loudness of audio in LUFS
+inputs:
+  input:
+    description: Path to input WAV file
+    required: true
+steps:
+  - id: loudness
+    run: sas-processor loudness --input "${{inputs.input}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout

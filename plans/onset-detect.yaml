@@ -1,0 +1,11 @@
+name: onset-detect
+description: Detect audio onsets (note attacks and transients)
+inputs:
+  input:
+    description: Path to input WAV file
+    required: true
+steps:
+  - id: onset_detect
+    run: sas-processor onset-detect --input "${{inputs.input}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout

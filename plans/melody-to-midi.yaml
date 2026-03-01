@@ -1,0 +1,14 @@
+name: melody-to-midi
+description: Extract melody from audio and convert to MIDI
+inputs:
+  input:
+    description: Path to input WAV file
+    required: true
+  output:
+    description: Path for output MIDI file
+    required: true
+steps:
+  - id: melody_to_midi
+    run: sas-processor melody-to-midi --input "${{inputs.input}}" --output "${{inputs.output}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout

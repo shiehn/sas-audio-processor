@@ -1,0 +1,26 @@
+name: reverb
+description: Apply reverb effect to audio
+inputs:
+  input:
+    description: Path to input WAV file
+    required: true
+  output:
+    description: Path for output WAV file
+    required: true
+  room_size:
+    description: Room size parameter (0.0 to 1.0)
+    required: false
+    default: "0.5"
+  damping:
+    description: Damping parameter (0.0 to 1.0)
+    required: false
+    default: "0.5"
+  wet_level:
+    description: Wet signal level (0.0 to 1.0)
+    required: false
+    default: "0.33"
+steps:
+  - id: reverb
+    run: sas-processor reverb --input "${{inputs.input}}" --output "${{inputs.output}}" --room-size "${{inputs.room_size}}" --damping "${{inputs.damping}}" --wet-level "${{inputs.wet_level}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout

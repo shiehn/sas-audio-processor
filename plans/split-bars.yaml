@@ -1,0 +1,25 @@
+name: split-bars
+description: Split audio into chunks by bar boundaries
+inputs:
+  input:
+    description: Path to input WAV file
+    required: true
+  output_dir:
+    description: Directory to save output chunk files
+    required: true
+  bpm:
+    description: Beats per minute for the audio
+    required: true
+  bars_per_chunk:
+    description: Number of bars per output chunk
+    required: false
+    default: "1"
+  meter:
+    description: Time signature denominator (4 for 4/4, 3 for 3/4, etc)
+    required: false
+    default: "4"
+steps:
+  - id: split_bars
+    run: sas-processor split-bars --input "${{inputs.input}}" --output-dir "${{inputs.output_dir}}" --bpm "${{inputs.bpm}}" --bars-per-chunk "${{inputs.bars_per_chunk}}" --meter "${{inputs.meter}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout

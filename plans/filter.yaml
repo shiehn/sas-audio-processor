@@ -1,0 +1,20 @@
+name: filter
+description: Apply high-pass or low-pass filter to audio
+inputs:
+  input:
+    description: Path to input WAV file
+    required: true
+  output:
+    description: Path for output WAV file
+    required: true
+  type:
+    description: Filter type (highpass or lowpass)
+    required: true
+  cutoff_hz:
+    description: Cutoff frequency in Hz
+    required: true
+steps:
+  - id: filter
+    run: sas-processor filter --input "${{inputs.input}}" --output "${{inputs.output}}" --type "${{inputs.type}}" --cutoff-hz "${{inputs.cutoff_hz}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout

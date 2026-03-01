@@ -1,0 +1,22 @@
+name: melody-extract
+description: Normalize input audio and extract melody to MIDI
+inputs:
+  input:
+    description: Path to input WAV file
+    required: true
+  output:
+    description: Path for output MIDI file
+    required: true
+  target_lufs:
+    description: Target LUFS for normalization
+    required: false
+    default: "-14"
+steps:
+  - id: normalize
+    run: sas-processor normalize --input "${{inputs.input}}" --output /tmp/sas-melody-norm.wav --mode lufs --target-lufs "${{inputs.target_lufs}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout
+  - id: melody_to_midi
+    run: sas-processor melody-to-midi --input /tmp/sas-melody-norm.wav --output "${{inputs.output}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout

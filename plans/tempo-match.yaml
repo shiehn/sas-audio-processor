@@ -1,0 +1,21 @@
+name: tempo-match
+description: Analyze source BPM and time-stretch audio to target tempo
+inputs:
+  input:
+    description: Path to input WAV file
+    required: true
+  output:
+    description: Path for output WAV file
+    required: true
+  target_bpm:
+    description: Target BPM for the output
+    required: true
+steps:
+  - id: analyze
+    run: sas-processor analyze --input "${{inputs.input}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout
+  - id: time_stretch
+    run: sas-processor time-stretch --input "${{inputs.input}}" --output "${{inputs.output}}" --source-bpm "$(echo '${{steps.analyze.outputs.result}}' | grep -o '\"bpm\":[0-9.]*' | cut -d':' -f2)" --target-bpm "${{inputs.target_bpm}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout

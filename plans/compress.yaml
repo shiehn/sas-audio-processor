@@ -1,0 +1,30 @@
+name: compress
+description: Apply dynamic range compression to audio
+inputs:
+  input:
+    description: Path to input WAV file
+    required: true
+  output:
+    description: Path for output WAV file
+    required: true
+  threshold:
+    description: Compression threshold in dB
+    required: false
+    default: "-20"
+  ratio:
+    description: Compression ratio (higher = more compression)
+    required: false
+    default: "4"
+  attack:
+    description: Attack time in milliseconds
+    required: false
+    default: "1"
+  release:
+    description: Release time in milliseconds
+    required: false
+    default: "100"
+steps:
+  - id: compress
+    run: sas-processor compress --input "${{inputs.input}}" --output "${{inputs.output}}" --threshold "${{inputs.threshold}}" --ratio "${{inputs.ratio}}" --attack "${{inputs.attack}}" --release "${{inputs.release}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout

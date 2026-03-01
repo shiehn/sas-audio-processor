@@ -355,12 +355,12 @@ class TestE2ECLI:
 
         return input_path, output_path
 
-    def test_cli_basic(self, cli_env) -> None:
-        """Test basic CLI invocation."""
+    def test_cli_trim(self, cli_env) -> None:
+        """Test trim subcommand."""
         input_path, output_path = cli_env
 
         result = subprocess.run(
-            ['python', '-m', 'sas_processor',
+            ['python', '-m', 'sas_processor', 'trim',
              '--input', input_path,
              '--output', output_path,
              '--bpm', '120',
@@ -372,17 +372,16 @@ class TestE2ECLI:
         assert result.returncode == 0
         assert Path(output_path).exists()
 
-    def test_cli_json_output(self, cli_env) -> None:
-        """Test CLI with JSON output mode."""
+    def test_cli_trim_json_output(self, cli_env) -> None:
+        """Test trim subcommand with JSON output."""
         input_path, output_path = cli_env
 
         result = subprocess.run(
-            ['python', '-m', 'sas_processor',
+            ['python', '-m', 'sas_processor', 'trim',
              '--input', input_path,
              '--output', output_path,
              '--bpm', '120',
-             '--bars', '4',
-             '--json'],
+             '--bars', '4'],
             capture_output=True,
             text=True
         )
@@ -395,40 +394,20 @@ class TestE2ECLI:
 
         # Should have progress events and final result
         progress_events = [j for j in json_objects if j.get('type') == 'progress']
-        complete_events = [j for j in json_objects if j.get('type') == 'complete']
+        trim_events = [j for j in json_objects if j.get('type') == 'trim']
 
         assert len(progress_events) >= 4  # loading, detecting, trimming, writing
-        assert len(complete_events) == 1
-        assert complete_events[0]['success'] is True
-
-    def test_cli_verbose(self, cli_env) -> None:
-        """Test CLI with verbose output."""
-        input_path, output_path = cli_env
-
-        result = subprocess.run(
-            ['python', '-m', 'sas_processor',
-             '--input', input_path,
-             '--output', output_path,
-             '--bpm', '120',
-             '--bars', '4',
-             '--verbose'],
-            capture_output=True,
-            text=True
-        )
-
-        assert result.returncode == 0
-        assert 'Success!' in result.stdout
-        assert 'Downbeat at' in result.stdout
+        assert len(trim_events) == 1
+        assert trim_events[0]['success'] is True
 
     def test_cli_invalid_file(self, tmp_path: Path) -> None:
         """Test CLI with non-existent input file."""
         result = subprocess.run(
-            ['python', '-m', 'sas_processor',
+            ['python', '-m', 'sas_processor', 'trim',
              '--input', str(tmp_path / 'nonexistent.wav'),
              '--output', str(tmp_path / 'output.wav'),
              '--bpm', '120',
-             '--bars', '4',
-             '--json'],
+             '--bars', '4'],
             capture_output=True,
             text=True
         )
@@ -444,12 +423,11 @@ class TestE2ECLI:
         input_path, output_path = cli_env
 
         result = subprocess.run(
-            ['python', '-m', 'sas_processor',
+            ['python', '-m', 'sas_processor', 'trim',
              '--input', input_path,
              '--output', output_path,
              '--bpm', '0',
-             '--bars', '4',
-             '--json'],
+             '--bars', '4'],
             capture_output=True,
             text=True
         )

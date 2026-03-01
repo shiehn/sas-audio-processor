@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sas-processor"
-version = "1.0.0"
+version = "2.0.0"
 description = "Audio processor for beat detection and bar-aligned trimming"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -18,6 +18,9 @@ dependencies = [
     "soundfile>=0.12.0",
     "numpy>=1.20.0,<2.0.0",
     "click>=8.0.0",
+    "pedalboard>=0.9.0",
+    "pyloudnorm>=0.1",
+    "basic-pitch>=0.3",
 ]
 
 [project.optional-dependencies]

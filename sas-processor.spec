@@ -56,6 +56,12 @@ a = Analysis(
         'decorator',
         'packaging',
         'platformdirs',
+        # Audio effects
+        'pedalboard',
+        'pyloudnorm',
+        # MIDI extraction
+        'basic_pitch',
+        'basic_pitch.inference',
     ],
     hookspath=[],
     hooksconfig={},

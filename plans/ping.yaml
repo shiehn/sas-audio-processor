@@ -1,0 +1,8 @@
+name: ping
+description: Verify sas-processor is available
+inputs: {}
+steps:
+  - id: ping
+    run: sas-processor ping --json 2>/dev/null || true
+    outputs:
+      result: stdout

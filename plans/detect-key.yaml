@@ -1,0 +1,11 @@
+name: detect-key
+description: Detect the musical key of the audio
+inputs:
+  input:
+    description: Path to input WAV file
+    required: true
+steps:
+  - id: detect_key
+    run: sas-processor detect-key --input "${{inputs.input}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout

@@ -1,0 +1,24 @@
+name: eq
+description: Apply parametric EQ to audio at a specific frequency
+inputs:
+  input:
+    description: Path to input WAV file
+    required: true
+  output:
+    description: Path for output WAV file
+    required: true
+  freq:
+    description: Center frequency in Hz
+    required: true
+  gain_db:
+    description: Gain at center frequency in dB
+    required: true
+  q:
+    description: Q factor (bandwidth, higher = narrower)
+    required: false
+    default: "1.0"
+steps:
+  - id: eq
+    run: sas-processor eq --input "${{inputs.input}}" --output "${{inputs.output}}" --freq "${{inputs.freq}}" --gain-db "${{inputs.gain_db}}" --q "${{inputs.q}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout

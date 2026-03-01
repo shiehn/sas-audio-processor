@@ -1,0 +1,38 @@
+name: master-track
+description: Master a track with normalization, compression, and limiting
+inputs:
+  input:
+    description: Path to input WAV file
+    required: true
+  output:
+    description: Path for output WAV file
+    required: true
+  target_lufs:
+    description: Target LUFS for normalization
+    required: false
+    default: "-14"
+  threshold:
+    description: Compressor threshold in dB
+    required: false
+    default: "-20"
+  ratio:
+    description: Compression ratio
+    required: false
+    default: "4"
+  limiter_threshold:
+    description: Limiter threshold in dB
+    required: false
+    default: "-1"
+steps:
+  - id: normalize
+    run: sas-processor normalize --input "${{inputs.input}}" --output /tmp/sas-master-norm.wav --mode lufs --target-lufs "${{inputs.target_lufs}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout
+  - id: compress
+    run: sas-processor compress --input /tmp/sas-master-norm.wav --output /tmp/sas-master-comp.wav --threshold "${{inputs.threshold}}" --ratio "${{inputs.ratio}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout
+  - id: limit
+    run: sas-processor limit --input /tmp/sas-master-comp.wav --output "${{inputs.output}}" --threshold "${{inputs.limiter_threshold}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout

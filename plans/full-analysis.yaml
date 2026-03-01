@@ -1,0 +1,19 @@
+name: full-analysis
+description: Run comprehensive analysis including BPM, key, and loudness detection
+inputs:
+  input:
+    description: Path to input WAV file
+    required: true
+steps:
+  - id: analyze
+    run: sas-processor analyze --input "${{inputs.input}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout
+  - id: detect_key
+    run: sas-processor detect-key --input "${{inputs.input}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout
+  - id: loudness
+    run: sas-processor loudness --input "${{inputs.input}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout

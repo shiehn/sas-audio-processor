@@ -1,6 +1,5 @@
 """Tests for SAS Audio Processor."""
 
-import tempfile
 from pathlib import Path
 
 import numpy as np

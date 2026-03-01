@@ -1,0 +1,17 @@
+name: gain
+description: Apply gain to audio file
+inputs:
+  input:
+    description: Path to input WAV file
+    required: true
+  output:
+    description: Path for output WAV file
+    required: true
+  db:
+    description: Gain in decibels (positive to amplify, negative to reduce)
+    required: true
+steps:
+  - id: gain
+    run: sas-processor gain --input "${{inputs.input}}" --output "${{inputs.output}}" --db "${{inputs.db}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout

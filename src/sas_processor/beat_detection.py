@@ -4,6 +4,13 @@ import numpy as np
 import librosa
 
 
+def _to_mono(audio: np.ndarray) -> np.ndarray:
+    """Convert audio to mono if stereo."""
+    if audio.ndim > 1:
+        return np.mean(audio, axis=1)
+    return audio
+
+
 def detect_beats(audio: np.ndarray, sr: int, bpm: float) -> np.ndarray:
     """
     Detect beat positions in audio using known BPM.
@@ -16,11 +23,7 @@ def detect_beats(audio: np.ndarray, sr: int, bpm: float) -> np.ndarray:
     Returns:
         Array of beat positions in samples (at original sample rate)
     """
-    # Convert to mono if stereo
-    if audio.ndim > 1:
-        audio_mono = np.mean(audio, axis=1)
-    else:
-        audio_mono = audio
+    audio_mono = _to_mono(audio)
 
     # Librosa works best at 22050Hz, but we want beat positions at original SR
     # Use beat_track with known BPM to skip tempo estimation
@@ -39,7 +42,7 @@ def detect_beats(audio: np.ndarray, sr: int, bpm: float) -> np.ndarray:
     return beat_samples
 
 
-def find_downbeat(audio: np.ndarray, sr: int, beat_samples: np.ndarray, meter: int = 4) -> int:
+def find_downbeat(audio_mono: np.ndarray, sr: int, beat_samples: np.ndarray, meter: int = 4) -> int:
     """
     Find the downbeat (beat 1) position using energy-based heuristic.
 
@@ -47,7 +50,7 @@ def find_downbeat(audio: np.ndarray, sr: int, beat_samples: np.ndarray, meter: i
     (0, 1, 2, or 3) has the highest average onset strength across all bars.
 
     Args:
-        audio: Audio samples (mono or stereo)
+        audio_mono: Audio samples (mono)
         sr: Sample rate
         beat_samples: Array of beat positions in samples
         meter: Beats per bar (default 4 for 4/4 time)
@@ -58,12 +61,6 @@ def find_downbeat(audio: np.ndarray, sr: int, beat_samples: np.ndarray, meter: i
     if len(beat_samples) < meter:
         # Not enough beats, return first beat
         return 0
-
-    # Convert to mono if stereo
-    if audio.ndim > 1:
-        audio_mono = np.mean(audio, axis=1)
-    else:
-        audio_mono = audio
 
     # Get onset strength envelope
     hop_length = 512
@@ -115,12 +112,13 @@ def get_downbeat_sample(audio: np.ndarray, sr: int, bpm: float, meter: int = 4) 
     Returns:
         Tuple of (downbeat_sample_position, all_beat_samples)
     """
-    beat_samples = detect_beats(audio, sr, bpm)
+    audio_mono = _to_mono(audio)
+    beat_samples = detect_beats(audio_mono, sr, bpm)
 
     if len(beat_samples) == 0:
         return 0, np.array([])
 
-    downbeat_idx = find_downbeat(audio, sr, beat_samples, meter)
+    downbeat_idx = find_downbeat(audio_mono, sr, beat_samples, meter)
     downbeat_sample = beat_samples[downbeat_idx]
 
     return int(downbeat_sample), beat_samples

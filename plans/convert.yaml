@@ -1,0 +1,20 @@
+name: convert
+description: Convert audio format, sample rate, or bit depth
+inputs:
+  input:
+    description: Path to input WAV file
+    required: true
+  output:
+    description: Path for output WAV file
+    required: true
+  sample_rate:
+    description: Target sample rate in Hz (e.g., 44100, 48000)
+    required: false
+  bit_depth:
+    description: Target bit depth (16, 24, or 32)
+    required: false
+steps:
+  - id: convert
+    run: sas-processor convert --input "${{inputs.input}}" --output "${{inputs.output}}"$([ -n "${{inputs.sample_rate}}" ] && echo " --sample-rate ${{inputs.sample_rate}}")$([ -n "${{inputs.bit_depth}}" ] && echo " --bit-depth ${{inputs.bit_depth}}") --json 2>/dev/null || true
+    outputs:
+      result: stdout

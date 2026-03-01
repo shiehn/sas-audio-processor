@@ -1,0 +1,22 @@
+name: normalize
+description: Normalize audio to a target loudness level
+inputs:
+  input:
+    description: Path to input WAV file
+    required: true
+  output:
+    description: Path for output WAV file
+    required: true
+  mode:
+    description: Normalization mode (lufs, peak, or rms)
+    required: false
+    default: "lufs"
+  target_lufs:
+    description: Target LUFS level for normalization
+    required: false
+    default: "-14"
+steps:
+  - id: normalize
+    run: sas-processor normalize --input "${{inputs.input}}" --output "${{inputs.output}}" --mode "${{inputs.mode}}" --target-lufs "${{inputs.target_lufs}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout

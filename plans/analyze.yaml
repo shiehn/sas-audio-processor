@@ -1,0 +1,11 @@
+name: analyze
+description: Analyze audio file to detect BPM, onset times, and frequency content
+inputs:
+  input:
+    description: Path to input WAV file
+    required: true
+steps:
+  - id: analyze
+    run: sas-processor analyze --input "${{inputs.input}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout

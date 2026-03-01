@@ -1,0 +1,14 @@
+name: mono
+description: Convert stereo audio to mono
+inputs:
+  input:
+    description: Path to input WAV file
+    required: true
+  output:
+    description: Path for output WAV file
+    required: true
+steps:
+  - id: mono
+    run: sas-processor mono --input "${{inputs.input}}" --output "${{inputs.output}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout

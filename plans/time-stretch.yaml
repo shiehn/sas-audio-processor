@@ -1,0 +1,20 @@
+name: time-stretch
+description: Change tempo of audio from source BPM to target BPM while preserving pitch
+inputs:
+  input:
+    description: Path to input WAV file
+    required: true
+  output:
+    description: Path for output WAV file
+    required: true
+  source_bpm:
+    description: Original BPM of the audio
+    required: true
+  target_bpm:
+    description: Target BPM for the output
+    required: true
+steps:
+  - id: time_stretch
+    run: sas-processor time-stretch --input "${{inputs.input}}" --output "${{inputs.output}}" --source-bpm "${{inputs.source_bpm}}" --target-bpm "${{inputs.target_bpm}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout

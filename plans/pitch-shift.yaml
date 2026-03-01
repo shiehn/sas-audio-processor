@@ -1,0 +1,17 @@
+name: pitch-shift
+description: Shift pitch of audio without changing tempo
+inputs:
+  input:
+    description: Path to input WAV file
+    required: true
+  output:
+    description: Path for output WAV file
+    required: true
+  semitones:
+    description: Number of semitones to shift (positive up, negative down)
+    required: true
+steps:
+  - id: pitch_shift
+    run: sas-processor pitch-shift --input "${{inputs.input}}" --output "${{inputs.output}}" --semitones "${{inputs.semitones}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout

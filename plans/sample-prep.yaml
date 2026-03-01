@@ -1,0 +1,39 @@
+name: sample-prep
+description: Prepare sample by analyzing, trimming to bars, normalizing, and converting
+inputs:
+  input:
+    description: Path to input WAV file
+    required: true
+  output:
+    description: Path for output WAV file
+    required: true
+  bpm:
+    description: Beats per minute for the audio
+    required: true
+  bars:
+    description: Number of bars to keep
+    required: true
+  target_lufs:
+    description: Target LUFS for normalization
+    required: false
+    default: "-14"
+  sample_rate:
+    description: Target sample rate in Hz (e.g., 44100, 48000)
+    required: false
+steps:
+  - id: analyze
+    run: sas-processor analyze --input "${{inputs.input}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout
+  - id: trim
+    run: sas-processor trim --input "${{inputs.input}}" --output /tmp/sas-prep-trim.wav --bpm "${{inputs.bpm}}" --bars "${{inputs.bars}}" --meter "4" --json 2>/dev/null || true
+    outputs:
+      result: stdout
+  - id: normalize
+    run: sas-processor normalize --input /tmp/sas-prep-trim.wav --output /tmp/sas-prep-norm.wav --mode lufs --target-lufs "${{inputs.target_lufs}}" --json 2>/dev/null || true
+    outputs:
+      result: stdout
+  - id: convert
+    run: sas-processor convert --input /tmp/sas-prep-norm.wav --output "${{inputs.output}}"$([ -n "${{inputs.sample_rate}}" ] && echo " --sample-rate ${{inputs.sample_rate}}") --json 2>/dev/null || true
+    outputs:
+      result: stdout
