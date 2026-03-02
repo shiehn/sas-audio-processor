@@ -27,14 +27,14 @@ This is the primary use case — use these audio tools directly from Claude Code
 ### 1. Install DeclarAgent
 
 ```bash
-go install github.com/stevehiehn/declaragent@latest
+go install github.com/shiehn/declaragent@latest
 ```
 
 ### 2. Install sas-audio-processor
 
 ```bash
 # From source
-git clone https://github.com/stevehiehn/sas-audio-processor.git
+git clone https://github.com/shiehn/sas-audio-processor.git
 cd sas-audio-processor
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt && pip install -e .
@@ -315,7 +315,7 @@ sas-processor melody-to-midi --input <file> --output <file.mid>
 ### Build Steps
 
 ```bash
-git clone https://github.com/stevehiehn/sas-audio-processor.git
+git clone https://github.com/shiehn/sas-audio-processor.git
 cd sas-audio-processor
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt && pip install -e .

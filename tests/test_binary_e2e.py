@@ -61,14 +61,13 @@ class TestBinaryBasic:
             timeout=30
         )
         assert result.returncode == 0
-        assert 'input' in result.stdout.lower()
-        assert 'output' in result.stdout.lower()
-        assert 'bpm' in result.stdout.lower()
+        assert 'trim' in result.stdout.lower()
+        assert 'analyze' in result.stdout.lower()
 
     def test_binary_missing_args(self, binary_path):
         """Test that missing required arguments produce an error."""
         result = subprocess.run(
-            [binary_path],
+            [binary_path, 'trim'],
             capture_output=True,
             text=True,
             timeout=30
@@ -80,12 +79,11 @@ class TestBinaryBasic:
         output_path = str(tmp_path / "output.wav")
 
         result = subprocess.run(
-            [binary_path,
+            [binary_path, 'trim',
              '--input', '/nonexistent/file.wav',
              '--output', output_path,
              '--bpm', '120',
-             '--bars', '4',
-             '--json'],
+             '--bars', '4'],
             capture_output=True,
             text=True,
             timeout=30
@@ -118,7 +116,7 @@ class TestBinaryRealAudio:
         output_path = str(tmp_path / "output.wav")
 
         result = subprocess.run(
-            [binary_path,
+            [binary_path, 'trim',
              '--input', input_path,
              '--output', output_path,
              '--bpm', str(bpm),
@@ -136,7 +134,7 @@ class TestBinaryRealAudio:
         lines = result.stdout.strip().split('\n')
         json_objects = [json.loads(line) for line in lines if line.strip()]
 
-        complete_events = [j for j in json_objects if j.get('type') == 'complete']
+        complete_events = [j for j in json_objects if j.get('type') == 'trim']
         assert len(complete_events) == 1
         assert complete_events[0]['success'] is True
 
@@ -151,7 +149,7 @@ class TestBinaryRealAudio:
         output_path = str(tmp_path / "output.wav")
 
         result = subprocess.run(
-            [binary_path,
+            [binary_path, 'trim',
              '--input', input_path,
              '--output', output_path,
              '--bpm', str(bpm),
@@ -177,7 +175,7 @@ class TestBinaryRealAudio:
         output_path = str(tmp_path / "output.wav")
 
         result = subprocess.run(
-            [binary_path,
+            [binary_path, 'trim',
              '--input', input_path,
              '--output', output_path,
              '--bpm', str(bpm),
@@ -189,7 +187,6 @@ class TestBinaryRealAudio:
         )
 
         assert result.returncode == 0, f"Binary failed: {result.stderr}"
-        assert 'Success!' in result.stdout
         assert Path(output_path).exists()
 
     def test_binary_stereo_preservation(self, binary_path, tmp_path):
@@ -210,7 +207,7 @@ class TestBinaryRealAudio:
         output_path = str(tmp_path / "output.wav")
 
         result = subprocess.run(
-            [binary_path,
+            [binary_path, 'trim',
              '--input', input_path,
              '--output', output_path,
              '--bpm', str(int(bpm)),
@@ -247,7 +244,7 @@ class TestBinaryModuleComparison:
 
         # Process with binary
         result = subprocess.run(
-            [binary_path,
+            [binary_path, 'trim',
              '--input', input_path,
              '--output', binary_output,
              '--bpm', str(bpm),
@@ -262,7 +259,7 @@ class TestBinaryModuleComparison:
         # Parse binary result
         lines = result.stdout.strip().split('\n')
         complete_events = [json.loads(line) for line in lines
-                         if line.strip() and json.loads(line).get('type') == 'complete']
+                         if line.strip() and json.loads(line).get('type') == 'trim']
         binary_result = complete_events[0]
 
         # Process with module
@@ -305,7 +302,7 @@ class TestBinaryModuleComparison:
             output_path = str(tmp_path / f"output_{i}.wav")
 
             result = subprocess.run(
-                [binary_path,
+                [binary_path, 'trim',
                  '--input', input_path,
                  '--output', output_path,
                  '--bpm', str(bpm),
@@ -319,7 +316,7 @@ class TestBinaryModuleComparison:
 
             lines = result.stdout.strip().split('\n')
             complete = [json.loads(line) for line in lines
-                       if line.strip() and json.loads(line).get('type') == 'complete'][0]
+                       if line.strip() and json.loads(line).get('type') == 'trim'][0]
             results.append(complete)
 
         # All runs should produce identical downbeat times
@@ -348,7 +345,7 @@ class TestBinaryProgressEvents:
         output_path = str(tmp_path / "output.wav")
 
         result = subprocess.run(
-            [binary_path,
+            [binary_path, 'trim',
              '--input', input_path,
              '--output', output_path,
              '--bpm', str(bpm),
@@ -375,7 +372,7 @@ class TestBinaryProgressEvents:
         assert 'writing' in stages
 
         # Should have a complete event
-        complete_events = [j for j in json_objects if j.get('type') == 'complete']
+        complete_events = [j for j in json_objects if j.get('type') == 'trim']
         assert len(complete_events) == 1
 
     def test_progress_percentages_increase(self, binary_path, nutcracker_wav, tmp_path):
@@ -384,7 +381,7 @@ class TestBinaryProgressEvents:
         output_path = str(tmp_path / "output.wav")
 
         result = subprocess.run(
-            [binary_path,
+            [binary_path, 'trim',
              '--input', input_path,
              '--output', output_path,
              '--bpm', str(bpm),
@@ -426,7 +423,7 @@ class TestBinaryPerformance:
 
         start = time.time()
         result = subprocess.run(
-            [binary_path,
+            [binary_path, 'trim',
              '--input', input_path,
              '--output', output_path,
              '--bpm', str(bpm),
@@ -476,7 +473,7 @@ class TestBinaryEdgeCases:
         output_path = str(tmp_path / "output.wav")
 
         result = subprocess.run(
-            [binary_path,
+            [binary_path, 'trim',
              '--input', input_path,
              '--output', output_path,
              '--bpm', str(bpm),
@@ -502,7 +499,7 @@ class TestBinaryEdgeCases:
         output_path = str(tmp_path / "output.wav")
 
         result = subprocess.run(
-            [binary_path,
+            [binary_path, 'trim',
              '--input', input_path,
              '--output', output_path,
              '--bpm', str(bpm),
@@ -522,7 +519,7 @@ class TestBinaryEdgeCases:
         output_path = str(tmp_path / "output.wav")
 
         result = subprocess.run(
-            [binary_path,
+            [binary_path, 'trim',
              '--input', input_path,
              '--output', output_path,
              '--bpm', str(bpm),

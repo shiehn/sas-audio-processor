@@ -393,12 +393,11 @@ class TestRealAudioCLI:
         input_path, bpm = nutcracker_wav
 
         result = subprocess.run(
-            ['python', '-m', 'sas_processor',
+            ['python', '-m', 'sas_processor', 'trim',
              '--input', input_path,
              '--output', output_wav,
              '--bpm', str(bpm),
-             '--bars', '4',
-             '--json'],
+             '--bars', '4'],
             capture_output=True,
             text=True
         )
@@ -410,16 +409,16 @@ class TestRealAudioCLI:
         lines = result.stdout.strip().split('\n')
         json_objects = [json.loads(line) for line in lines if line.strip()]
 
-        complete_events = [j for j in json_objects if j.get('type') == 'complete']
-        assert len(complete_events) == 1
-        assert complete_events[0]['success'] is True
+        trim_events = [j for j in json_objects if j.get('type') == 'trim']
+        assert len(trim_events) == 1
+        assert trim_events[0]['success'] is True
 
     def test_cli_with_electronic(self, choice_wav, output_wav):
         """Test CLI processing of electronic music."""
         input_path, bpm = choice_wav
 
         result = subprocess.run(
-            ['python', '-m', 'sas_processor',
+            ['python', '-m', 'sas_processor', 'trim',
              '--input', input_path,
              '--output', output_wav,
              '--bpm', str(bpm),
@@ -430,7 +429,6 @@ class TestRealAudioCLI:
         )
 
         assert result.returncode == 0
-        assert 'Success!' in result.stdout
         assert Path(output_wav).exists()
 
 

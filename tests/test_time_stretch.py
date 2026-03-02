@@ -154,7 +154,7 @@ class TestTimeStretchCLI:
     """Tests for the --time-stretch CLI mode."""
 
     def test_cli_time_stretch_json(self, binary_path, tmp_path):
-        """CLI --time-stretch with --json should return proper JSON."""
+        """CLI time-stretch subcommand should return proper JSON."""
         if binary_path is None:
             pytest.skip("Binary not available")
 
@@ -162,7 +162,7 @@ class TestTimeStretchCLI:
         output_path = str(tmp_path / "stretched.wav")
 
         result = subprocess.run(
-            [binary_path, '--time-stretch', '--json',
+            [binary_path, 'time-stretch',
              '--input', wav_path, '--output', output_path,
              '--source-bpm', '100', '--target-bpm', '110'],
             capture_output=True, text=True, timeout=60,
@@ -170,7 +170,7 @@ class TestTimeStretchCLI:
 
         assert result.returncode == 0
         data = json.loads(result.stdout.strip().split('\n')[-1])
-        assert data['type'] == 'time_stretch'
+        assert data['type'] == 'time-stretch'
         assert data['success'] is True
         assert data['source_bpm'] == 100.0
         assert data['target_bpm'] == 110.0
@@ -179,15 +179,15 @@ class TestTimeStretchCLI:
         assert Path(data['output']).exists()
 
     def test_cli_version_bumped(self, binary_path):
-        """CLI --ping should return version 1.1.0."""
+        """CLI ping should return current version."""
         if binary_path is None:
             pytest.skip("Binary not available")
 
         result = subprocess.run(
-            [binary_path, '--ping'],
+            [binary_path, 'ping'],
             capture_output=True, text=True, timeout=10,
         )
 
         assert result.returncode == 0
         data = json.loads(result.stdout.strip())
-        assert data['version'] == '1.1.0'
+        assert data['version'] == '2.0.0'
