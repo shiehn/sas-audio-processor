@@ -6,7 +6,7 @@
 
 This is a component of [Signals & Sorcery](https://signalsandsorcery.com/), a music production application.
 
-A suite of 25 audio processing tools — trim, normalize, compress, EQ, reverb, pitch-shift, time-stretch, key detection, MIDI extraction, and more — exposed as MCP tools via [DeclarAgent](https://github.com/stevehiehn/declaragent).
+A suite of 25 audio processing tools — trim, normalize, compress, EQ, reverb, pitch-shift, time-stretch, key detection, MIDI extraction, and more — exposed as MCP tools via [DeclarAgent](https://github.com/shiehn/DeclarAgent).
 
 ## What You Get
 
