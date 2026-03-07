@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - runner: macos-latest
+            arch: arm64
+          - runner: macos-13
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Run tests
+        run: pytest tests/ -v
+
+      - name: Build binary
+        run: pyinstaller sas-processor.spec --clean --noconfirm
+
+      - name: Package binary
+        run: tar -czf sas-processor-${{ matrix.arch }}.tar.gz -C dist sas-processor
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sas-processor-${{ matrix.arch }}
+          path: sas-processor-${{ matrix.arch }}.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            sas-processor-arm64/sas-processor-arm64.tar.gz
+            sas-processor-x86_64/sas-processor-x86_64.tar.gz
+          generate_release_notes: true

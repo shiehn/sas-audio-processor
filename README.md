@@ -390,6 +390,26 @@ All subcommands output line-delimited JSON to stdout.
 {"type": "error", "code": "FILE_NOT_FOUND", "message": "Input file not found: /path/to/file.wav", "severity": "fatal"}
 ```
 
+## Creating a Release
+
+Releases are built automatically by GitHub Actions. To create a new release:
+
+1. Update the version in `pyproject.toml`
+2. Commit and push your changes
+3. Tag the commit and push the tag:
+
+```bash
+git tag v2.0.0
+git push origin v2.0.0
+```
+
+This triggers the release workflow which:
+- Runs tests on both architectures
+- Builds self-contained binaries for **ARM64** (Apple Silicon) and **x86_64** (Intel)
+- Creates a GitHub Release with both `.tar.gz` archives attached
+
+Download binaries from the [Releases](https://github.com/shiehn/sas-audio-processor/releases) page.
+
 ## Limitations
 
 - **WAV only** — no MP3, FLAC, or other formats
