@@ -1,24 +1,58 @@
 """Audio effects processing using pedalboard, pyloudnorm, and numpy."""
 
+from typing import Any, Dict, List, Optional, Tuple
+
 import numpy as np
+import numpy.typing as npt
 import soundfile as sf
 import librosa
 
 
-def _load(input_path: str):
+AudioData = npt.NDArray[np.float64]
+
+
+def _load(input_path: str) -> Tuple[AudioData, int, str]:
     """Load audio preserving format info. Returns (audio, sr, subtype)."""
     info = sf.info(input_path)
     audio, sr = sf.read(input_path, dtype='float64')
     return audio, sr, info.subtype
 
 
-def _save(audio, output_path: str, sr: int, subtype: str):
+def _save(audio: AudioData, output_path: str, sr: int, subtype: str) -> None:
     """Save audio preserving format."""
     sf.write(output_path, audio, sr, subtype=subtype)
 
 
+def _apply_pedalboard_effect(effects: List[Any], input_path: str,
+                             output_path: str) -> None:
+    """Load audio, apply pedalboard effects, and save.
+
+    Handles float32 conversion and channel layout (pedalboard expects
+    channels-first float32; soundfile uses channels-last float64).
+    """
+    from pedalboard import Pedalboard
+    audio, sr, subtype = _load(input_path)
+
+    board = Pedalboard(effects)
+
+    audio_f32 = audio.astype(np.float32)
+    if audio_f32.ndim == 1:
+        audio_f32 = audio_f32.reshape(1, -1)
+    else:
+        audio_f32 = audio_f32.T
+
+    processed = board(audio_f32, sr)
+
+    if audio.ndim == 1:
+        processed = processed.flatten()
+    else:
+        processed = processed.T
+
+    _save(processed.astype(np.float64), output_path, sr, subtype)
+
+
 def normalize_audio(input_path: str, output_path: str, mode: str,
-                    target_lufs: float, target_peak: float) -> dict:
+                    target_lufs: float, target_peak: float) -> Dict[str, Any]:
     audio, sr, subtype = _load(input_path)
 
     if mode == 'lufs':
@@ -46,7 +80,7 @@ def normalize_audio(input_path: str, output_path: str, mode: str,
     return {"mode": mode, "gain_db": round(float(gain_db), 2)}
 
 
-def apply_gain(input_path: str, output_path: str, db: float) -> dict:
+def apply_gain(input_path: str, output_path: str, db: float) -> Dict[str, Any]:
     audio, sr, subtype = _load(input_path)
     factor = 10 ** (db / 20.0)
     audio = audio * factor
@@ -54,7 +88,7 @@ def apply_gain(input_path: str, output_path: str, db: float) -> dict:
     return {"gain_db": db}
 
 
-def to_mono(input_path: str, output_path: str) -> dict:
+def to_mono(input_path: str, output_path: str) -> Dict[str, int]:
     audio, sr, subtype = _load(input_path)
     if audio.ndim > 1:
         channels_in = audio.shape[1]
@@ -66,7 +100,7 @@ def to_mono(input_path: str, output_path: str) -> dict:
 
 
 def convert_audio(input_path: str, output_path: str,
-                  target_sr, bit_depth) -> dict:
+                  target_sr: Optional[int], bit_depth: Optional[str]) -> Dict[str, Any]:
     audio, sr, subtype = _load(input_path)
     result = {"original_sample_rate": sr, "original_bit_depth": subtype}
 
@@ -88,7 +122,7 @@ def convert_audio(input_path: str, output_path: str,
     return result
 
 
-def remove_silence(input_path: str, output_path: str, top_db: float) -> dict:
+def remove_silence(input_path: str, output_path: str, top_db: float) -> Dict[str, Any]:
     audio, sr, subtype = _load(input_path)
     original_len = audio.shape[0] if audio.ndim > 1 else len(audio)
 
@@ -119,146 +153,57 @@ def remove_silence(input_path: str, output_path: str, top_db: float) -> dict:
 
 
 def compress_audio(input_path: str, output_path: str, threshold_db: float,
-                   ratio: float, attack_ms: float, release_ms: float) -> dict:
-    from pedalboard import Pedalboard, Compressor
-    audio, sr, subtype = _load(input_path)
-
-    board = Pedalboard([
-        Compressor(
-            threshold_db=threshold_db,
-            ratio=ratio,
-            attack_ms=attack_ms,
-            release_ms=release_ms,
-        )
-    ])
-
-    # pedalboard expects float32, shape (channels, samples)
-    audio_f32 = audio.astype(np.float32)
-    if audio_f32.ndim == 1:
-        audio_f32 = audio_f32.reshape(1, -1)
-    else:
-        audio_f32 = audio_f32.T
-
-    processed = board(audio_f32, sr)
-
-    if audio.ndim == 1:
-        processed = processed.flatten()
-    else:
-        processed = processed.T
-
-    _save(processed.astype(np.float64), output_path, sr, subtype)
+                   ratio: float, attack_ms: float, release_ms: float) -> Dict[str, float]:
+    from pedalboard import Compressor
+    _apply_pedalboard_effect(
+        [Compressor(threshold_db=threshold_db, ratio=ratio,
+                    attack_ms=attack_ms, release_ms=release_ms)],
+        input_path, output_path,
+    )
     return {"threshold_db": threshold_db, "ratio": ratio,
             "attack_ms": attack_ms, "release_ms": release_ms}
 
 
 def apply_eq(input_path: str, output_path: str, freq: float,
-             gain_db: float, q: float) -> dict:
-    from pedalboard import Pedalboard, PeakFilter
-    audio, sr, subtype = _load(input_path)
-
-    board = Pedalboard([
-        PeakFilter(cutoff_frequency_hz=freq, gain_db=gain_db, q=q)
-    ])
-
-    audio_f32 = audio.astype(np.float32)
-    if audio_f32.ndim == 1:
-        audio_f32 = audio_f32.reshape(1, -1)
-    else:
-        audio_f32 = audio_f32.T
-
-    processed = board(audio_f32, sr)
-
-    if audio.ndim == 1:
-        processed = processed.flatten()
-    else:
-        processed = processed.T
-
-    _save(processed.astype(np.float64), output_path, sr, subtype)
+             gain_db: float, q: float) -> Dict[str, float]:
+    from pedalboard import PeakFilter
+    _apply_pedalboard_effect(
+        [PeakFilter(cutoff_frequency_hz=freq, gain_db=gain_db, q=q)],
+        input_path, output_path,
+    )
     return {"freq": freq, "gain_db": gain_db, "q": q}
 
 
 def apply_reverb(input_path: str, output_path: str, room_size: float,
-                 damping: float, wet_level: float) -> dict:
-    from pedalboard import Pedalboard, Reverb
-    audio, sr, subtype = _load(input_path)
-
-    board = Pedalboard([
-        Reverb(room_size=room_size, damping=damping, wet_level=wet_level,
-               dry_level=1.0 - wet_level)
-    ])
-
-    audio_f32 = audio.astype(np.float32)
-    if audio_f32.ndim == 1:
-        audio_f32 = audio_f32.reshape(1, -1)
-    else:
-        audio_f32 = audio_f32.T
-
-    processed = board(audio_f32, sr)
-
-    if audio.ndim == 1:
-        processed = processed.flatten()
-    else:
-        processed = processed.T
-
-    _save(processed.astype(np.float64), output_path, sr, subtype)
+                 damping: float, wet_level: float) -> Dict[str, float]:
+    from pedalboard import Reverb
+    _apply_pedalboard_effect(
+        [Reverb(room_size=room_size, damping=damping, wet_level=wet_level,
+                dry_level=1.0 - wet_level)],
+        input_path, output_path,
+    )
     return {"room_size": room_size, "damping": damping, "wet_level": wet_level}
 
 
-def apply_limiter(input_path: str, output_path: str, threshold_db: float) -> dict:
-    from pedalboard import Pedalboard, Limiter
-    audio, sr, subtype = _load(input_path)
-
-    board = Pedalboard([
-        Limiter(threshold_db=threshold_db)
-    ])
-
-    audio_f32 = audio.astype(np.float32)
-    if audio_f32.ndim == 1:
-        audio_f32 = audio_f32.reshape(1, -1)
-    else:
-        audio_f32 = audio_f32.T
-
-    processed = board(audio_f32, sr)
-
-    if audio.ndim == 1:
-        processed = processed.flatten()
-    else:
-        processed = processed.T
-
-    _save(processed.astype(np.float64), output_path, sr, subtype)
+def apply_limiter(input_path: str, output_path: str, threshold_db: float) -> Dict[str, float]:
+    from pedalboard import Limiter
+    _apply_pedalboard_effect(
+        [Limiter(threshold_db=threshold_db)],
+        input_path, output_path,
+    )
     return {"threshold_db": threshold_db}
 
 
 def apply_filter(input_path: str, output_path: str, filter_type: str,
-                 cutoff_hz: float) -> dict:
-    from pedalboard import Pedalboard, HighpassFilter, LowpassFilter
-    audio, sr, subtype = _load(input_path)
-
-    if filter_type == 'highpass':
-        filt = HighpassFilter(cutoff_frequency_hz=cutoff_hz)
-    else:
-        filt = LowpassFilter(cutoff_frequency_hz=cutoff_hz)
-
-    board = Pedalboard([filt])
-
-    audio_f32 = audio.astype(np.float32)
-    if audio_f32.ndim == 1:
-        audio_f32 = audio_f32.reshape(1, -1)
-    else:
-        audio_f32 = audio_f32.T
-
-    processed = board(audio_f32, sr)
-
-    if audio.ndim == 1:
-        processed = processed.flatten()
-    else:
-        processed = processed.T
-
-    _save(processed.astype(np.float64), output_path, sr, subtype)
+                 cutoff_hz: float) -> Dict[str, Any]:
+    from pedalboard import HighpassFilter, LowpassFilter
+    filt = HighpassFilter(cutoff_frequency_hz=cutoff_hz) if filter_type == 'highpass' \
+        else LowpassFilter(cutoff_frequency_hz=cutoff_hz)
+    _apply_pedalboard_effect([filt], input_path, output_path)
     return {"filter_type": filter_type, "cutoff_hz": cutoff_hz}
 
 
-def pitch_shift_audio(input_path: str, output_path: str, semitones: float) -> dict:
+def pitch_shift_audio(input_path: str, output_path: str, semitones: float) -> Dict[str, float]:
     audio, sr, subtype = _load(input_path)
 
     if audio.ndim == 1:

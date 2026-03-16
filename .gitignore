@@ -36,3 +36,10 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Build artifacts
+dist-arm64/
+dist-x86_64/
+
+# Additional venvs
+venv-x64/

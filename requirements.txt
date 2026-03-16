@@ -1,11 +1,11 @@
-librosa>=0.10.0
-soundfile>=0.12.0
+librosa>=0.10.0,<1.0.0
+soundfile>=0.12.0,<1.0.0
 numpy>=1.20.0,<2.0.0
-click>=8.0.0
-pedalboard>=0.9.0
-pyloudnorm>=0.1
-basic-pitch>=0.3
+click>=8.0.0,<9.0.0
+pedalboard>=0.9.0,<1.0.0
+pyloudnorm>=0.1,<1.0
+basic-pitch>=0.3,<1.0
 
 # Development dependencies
-pytest>=7.0.0
-pyinstaller>=6.0.0
+pytest>=7.0.0,<9.0.0
+pyinstaller>=6.0.0,<7.0.0

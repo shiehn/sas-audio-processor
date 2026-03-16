@@ -7,6 +7,24 @@ This is a self-contained macOS binary for audio processing, designed to be calle
 2. **Downbeat detection** using energy-based heuristics (finds beat 1 of the bar)
 3. **Audio trimming** starting at the first downbeat for a specified number of bars
 
+## Test Discipline (CRITICAL - NEVER SKIP)
+
+**⚠️ ALWAYS run tests BEFORE and AFTER every code change. NEVER ignore test failures. ⚠️**
+
+### The Rules
+1. **BEFORE starting work**: Run the full test suite to establish a baseline. If tests are already failing, STOP and notify the user before proceeding.
+2. **AFTER every change**: Run the full test suite again. All tests must pass.
+3. **NEVER ignore failures**: A failing test is a BLOCKER. Do not move on, do not commit, do not consider the work done until all tests pass.
+4. **No silent regressions**: If your change breaks an existing test, fix it immediately. Do not assume the test is wrong — investigate first.
+5. **Add tests for new code**: Any significant new functionality must include test coverage.
+
+### Test Commands
+```bash
+cd /Users/stevehiehn/sas-m4l-project/sas-audio-processor && source venv/bin/activate && pytest tests/ -v
+```
+
+---
+
 ## Architecture
 
 ```
