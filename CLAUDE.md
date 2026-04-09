@@ -20,7 +20,7 @@ This is a self-contained macOS binary for audio processing, designed to be calle
 
 ### Test Commands
 ```bash
-cd /Users/stevehiehn/sas-m4l-project/sas-audio-processor && source venv/bin/activate && pytest tests/ -v
+cd /Users/stevehiehn/sas-platform/sas-audio-processor && source venv/bin/activate && pytest tests/ -v
 ```
 
 ---
