@@ -457,6 +457,36 @@ def split_bars(input_path: str, output_dir: str, bpm: float,
     emit_json({"type": "split-bars", "success": True, **result})
 
 
+# --- Transition generator (v1): beat-aligned chopping ---
+
+@main.command('trim-range')
+@click.option('--input', '-i', 'input_path', required=True,
+              type=click.Path(exists=False), help='Input WAV file path')
+@click.option('--output', '-o', 'output_path', required=True,
+              type=click.Path(), help='Output WAV file path (parent dir auto-created)')
+@click.option('--bpm', required=True, type=float, help='BPM of the input stem')
+@click.option('--meter', default=4, type=int,
+              help='Beats per bar (default: 4)')
+@click.option('--start-beat', required=True, type=float,
+              help='Beat offset from start of input (0-indexed)')
+@click.option('--duration-beats', required=True, type=float,
+              help='Length of chop in beats (v1 uses 1, 2, or 4)')
+@handle_cli_errors("TRIM_RANGE_ERROR")
+def trim_range_cmd(
+    input_path: str,
+    output_path: str,
+    bpm: float,
+    meter: int,
+    start_beat: float,
+    duration_beats: float,
+) -> None:
+    """Extract a beat-aligned chop from a source WAV (for transition generator)."""
+    _validate_input_file(input_path)
+    from sas_processor.chops import trim_range
+    result = trim_range(input_path, output_path, bpm, meter, start_beat, duration_beats)
+    emit_json({"type": "trim-range", "success": True, **result})
+
+
 # --- Phase 4: MIDI Extraction ---
 
 @main.command('melody-to-midi')
