@@ -471,6 +471,10 @@ def split_bars(input_path: str, output_dir: str, bpm: float,
               help='Beat offset from start of input (0-indexed)')
 @click.option('--duration-beats', required=True, type=float,
               help='Length of chop in beats (v1 uses 1, 2, or 4)')
+@click.option('--fade-in-beats', default=0.0, type=float,
+              help='Linear fade-in over the first N beats of the chop (default: 0, no fade)')
+@click.option('--fade-out-beats', default=0.0, type=float,
+              help='Linear fade-out over the last N beats of the chop (default: 0, no fade)')
 @handle_cli_errors("TRIM_RANGE_ERROR")
 def trim_range_cmd(
     input_path: str,
@@ -479,11 +483,16 @@ def trim_range_cmd(
     meter: int,
     start_beat: float,
     duration_beats: float,
+    fade_in_beats: float,
+    fade_out_beats: float,
 ) -> None:
     """Extract a beat-aligned chop from a source WAV (for transition generator)."""
     _validate_input_file(input_path)
     from sas_processor.chops import trim_range
-    result = trim_range(input_path, output_path, bpm, meter, start_beat, duration_beats)
+    result = trim_range(
+        input_path, output_path, bpm, meter, start_beat, duration_beats,
+        fade_in_beats=fade_in_beats, fade_out_beats=fade_out_beats,
+    )
     emit_json({"type": "trim-range", "success": True, **result})
 
 
