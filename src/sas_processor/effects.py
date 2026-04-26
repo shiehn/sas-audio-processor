@@ -13,11 +13,35 @@ from sas_processor.io_utils import atomic_sf_write
 AudioData = npt.NDArray[np.float64]
 
 
+# Subtypes libsndfile will accept when writing WAV. Used to normalize the
+# source subtype so a non-WAV input (e.g. MP3 with subtype `MPEG_LAYER_III`,
+# as returned by Lyria's C2PA-watermarked audio) can be re-encoded as WAV
+# without producing a `Supported file format but unsupported encoding`
+# error at write time. The audio-processor is WAV-only at the CLI boundary,
+# so collapsing exotic subtypes to a clean default here is safe.
+_WAV_WRITABLE_SUBTYPES = frozenset({
+    'PCM_16', 'PCM_24', 'PCM_32', 'PCM_S8', 'PCM_U8', 'FLOAT', 'DOUBLE',
+})
+
+
 def _load(input_path: str) -> Tuple[AudioData, int, str]:
-    """Load audio preserving format info. Returns (audio, sr, subtype)."""
-    info = sf.info(input_path)
-    audio, sr = sf.read(input_path, dtype='float64')
-    return audio, sr, info.subtype
+    """Load audio preserving format info. Returns (audio, sr, subtype).
+
+    Falls back to librosa for containers libsndfile can't open. The
+    returned `subtype` is always WAV-write-compatible: source subtypes
+    that libsndfile cannot encode in WAV (e.g. `MPEG_LAYER_III`) are
+    collapsed to `FLOAT`.
+    """
+    try:
+        info = sf.info(input_path)
+        audio, sr = sf.read(input_path, dtype='float64')
+        subtype = info.subtype if info.subtype in _WAV_WRITABLE_SUBTYPES else 'FLOAT'
+        return audio, sr, subtype
+    except sf.LibsndfileError:
+        audio, sr = librosa.load(input_path, sr=None, mono=False)
+        if audio.ndim > 1:
+            audio = audio.T
+        return audio.astype(np.float64), int(sr), 'FLOAT'
 
 
 def _save(audio: AudioData, output_path: str, sr: int, subtype: str) -> None:
