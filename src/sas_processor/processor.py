@@ -71,8 +71,13 @@ def _check_input_file(input_path: str) -> Optional[str]:
     if input_file.stat().st_size == 0:
         return f"Input file is empty: {input_path}"
 
-    if not input_file.suffix.lower() == '.wav':
-        return f"Only WAV files are supported, got: {input_file.suffix}"
+    # Containers libsndfile can read directly, plus formats handled via
+    # the librosa fallback in `_load` (e.g. MP3 from Lyria's
+    # C2PA-watermarked audio). Output is still WAV at the CLI boundary;
+    # this check just gates the input.
+    _ALLOWED_INPUT_SUFFIXES = {'.wav', '.aiff', '.aif', '.flac', '.ogg', '.oga', '.mp3'}
+    if input_file.suffix.lower() not in _ALLOWED_INPUT_SUFFIXES:
+        return f"Unsupported input format: {input_file.suffix}"
 
     return None
 
@@ -147,20 +152,41 @@ def _verify_output_written(output_path: str) -> Optional[str]:
     return None
 
 
+_WAV_WRITABLE_SUBTYPES = frozenset({
+    'PCM_16', 'PCM_24', 'PCM_32', 'PCM_S8', 'PCM_U8', 'FLOAT', 'DOUBLE',
+})
+
+
 def load_audio(input_path: str) -> tuple[np.ndarray, int, str]:
     """
     Load audio file preserving original sample rate and format.
 
-    Args:
-        input_path: Path to input WAV file
+    Output is always WAV at the CLI boundary, so subtypes libsndfile
+    cannot encode in WAV (e.g. `MPEG_LAYER_III` from Lyria's
+    C2PA-watermarked MP3) are normalized to `FLOAT`. Containers
+    libsndfile cannot open at all are read via librosa.
 
     Returns:
         Tuple of (audio_data, sample_rate, subtype)
-        subtype indicates bit depth (e.g., 'PCM_16', 'PCM_24', 'FLOAT')
+        subtype is a WAV-write-compatible token like 'PCM_16', 'FLOAT'.
     """
-    info = sf.info(input_path)
-    audio, sr = sf.read(input_path, dtype='float64')
-    return audio, sr, info.subtype
+    import soundfile as sf
+    try:
+        info = sf.info(input_path)
+        audio, sr = sf.read(input_path, dtype='float64')
+        subtype = info.subtype if info.subtype in _WAV_WRITABLE_SUBTYPES else 'FLOAT'
+        return audio, sr, subtype
+    except sf.LibsndfileError as sf_err:
+        try:
+            import librosa
+            audio, sr = librosa.load(input_path, sr=None, mono=False)
+        except Exception as lib_err:
+            raise sf.SoundFileError(
+                f"Could not decode audio (libsndfile: {sf_err}; librosa: {lib_err})"
+            ) from lib_err
+        if audio.ndim > 1:
+            audio = audio.T
+        return audio.astype(np.float64), int(sr), 'FLOAT'
 
 
 def save_audio(audio: np.ndarray, output_path: str, sr: int, subtype: str) -> None:

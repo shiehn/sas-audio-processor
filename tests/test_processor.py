@@ -371,12 +371,14 @@ class TestProcessAudioIOErrors:
         assert result.error_code == "INPUT_ERROR"
 
     def test_input_not_wav_file(self, tmp_path: Path) -> None:
-        """Test error when input file is not a WAV."""
-        input_path = str(tmp_path / "input.mp3")
+        """Test error when input file has an unsupported extension."""
+        input_path = str(tmp_path / "input.txt")
         output_path = str(tmp_path / "output.wav")
 
-        # Create a fake file with wrong extension
-        Path(input_path).write_text("not a wav file")
+        # Create a fake file with an unsupported extension. MP3, FLAC,
+        # OGG, AIFF are now accepted (Lyria returns C2PA-watermarked
+        # MP3); only truly non-audio extensions should be rejected.
+        Path(input_path).write_text("not an audio file")
 
         result = process_audio(
             input_path=input_path,
@@ -386,7 +388,7 @@ class TestProcessAudioIOErrors:
         )
 
         assert not result.success
-        assert "wav" in result.error.lower() or "supported" in result.error.lower()
+        assert "supported" in result.error.lower() or "format" in result.error.lower()
         assert result.error_code == "INPUT_ERROR"
 
     def test_output_directory_not_exists(self, tmp_path: Path) -> None:
