@@ -415,7 +415,8 @@ Download binaries from the [Releases](https://github.com/shiehn/sas-audio-proces
 - **WAV only** — no MP3, FLAC, or other formats
 - **macOS only** — binary builds target macOS (CLI works anywhere Python runs)
 - **Binary size ~220MB** — due to numpy/scipy/librosa dependencies
+- **First-run download** — beat tracking and key detection use librosa, which downloads ~100MB of models on first use (cached in `~/.cache/librosa/` thereafter)
 
 ## License
 
-MIT
+GPL-3.0-or-later — see [`../LICENSE`](../LICENSE).

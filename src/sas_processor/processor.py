@@ -2,14 +2,15 @@
 
 import os
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable, List, Optional
 
 import numpy as np
 import soundfile as sf
 
 from sas_processor.beat_detection import get_downbeat_sample
+from sas_processor.io_utils import atomic_sf_write
 
 
 # Minimum free disk space required (10 MB as safety buffer)
@@ -25,6 +26,12 @@ class ProcessingResult:
     original_duration: float
     output_duration: float
     sample_rate: int
+    # Beat positions inside the TRIMMED output (samples). The first entry
+    # in `output_beats` corresponds to bar 1 / beat 1 of the trimmed clip
+    # (offset 0 by construction — we trim starting at the detected downbeat).
+    # Empty when detection failed or insufficient beats were found.
+    output_beats: List[int] = field(default_factory=list)
+    detected_bpm: Optional[float] = None
     error: Optional[str] = None
     error_code: Optional[str] = None
 
@@ -158,7 +165,7 @@ def load_audio(input_path: str) -> tuple[np.ndarray, int, str]:
 
 def save_audio(audio: np.ndarray, output_path: str, sr: int, subtype: str) -> None:
     """
-    Save audio file preserving original format.
+    Save audio file preserving original format. Atomic — temp + replace.
 
     Args:
         audio: Audio data
@@ -166,7 +173,7 @@ def save_audio(audio: np.ndarray, output_path: str, sr: int, subtype: str) -> No
         sr: Sample rate
         subtype: Original subtype (bit depth)
     """
-    sf.write(output_path, audio, sr, subtype=subtype)
+    atomic_sf_write(output_path, audio, sr, subtype=subtype)
 
 
 def calculate_bar_samples(sr: int, bpm: float, bars: int, meter: int = 4) -> int:
@@ -310,6 +317,19 @@ def process_audio(
         report_progress("trimming", 60)
         num_samples = calculate_bar_samples(sr, bpm, bars, meter)
 
+        # Translate the detected beats into the TRIMMED output coordinate
+        # system. The trim starts at `downbeat_sample`, so beat positions
+        # in the output equal `(orig_beat - downbeat_sample)` for those
+        # falling inside `[0, num_samples)`. The first beat (bar 1, beat 1)
+        # is always 0 by construction.
+        output_beats: list[int] = []
+        if len(beat_samples) > 0:
+            shifted = beat_samples.astype(np.int64) - int(downbeat_sample)
+            for s in shifted:
+                s_int = int(s)
+                if 0 <= s_int < num_samples:
+                    output_beats.append(s_int)
+
         # Check disk space with estimated output size
         estimated_size = _estimate_output_size(num_samples, channels)
         output_error = _check_output_path(output_path, estimated_size_bytes=estimated_size)
@@ -351,7 +371,13 @@ def process_audio(
             downbeat_time=downbeat_time,
             original_duration=original_duration,
             output_duration=output_duration,
-            sample_rate=sr
+            sample_rate=sr,
+            output_beats=output_beats,
+            # Phase 1c: BPM was a known input, not detected from audio. We
+            # still surface it so consumers can warn on mismatch later
+            # (when we plug detection back in). Today this is the input BPM
+            # — kept to make the schema forward-compatible.
+            detected_bpm=float(bpm),
         )
 
     except MemoryError:

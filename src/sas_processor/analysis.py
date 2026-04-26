@@ -1,11 +1,14 @@
 """Audio analysis: key detection, loudness measurement, onset detection, bar splitting."""
 
+import contextlib
 import os
 from pathlib import Path
 
 import librosa
 import numpy as np
 import soundfile as sf
+
+from sas_processor.io_utils import _log_event, atomic_sf_write
 
 
 def _load_mono(input_path: str):
@@ -98,11 +101,19 @@ def detect_onsets(input_path: str) -> dict:
 
 def split_audio_bars(input_path: str, output_dir: str, bpm: float,
                      bars_per_chunk: int, meter: int) -> dict:
-    """Split audio into bar-aligned chunks."""
+    """Split audio into bar-aligned chunks.
+
+    Writes are atomic per bar (temp + replace). On any failure mid-loop the
+    helper rolls back: bar files written so far are deleted, and if THIS
+    call created the output directory, that empty dir is also removed so
+    the caller never sees a partial state.
+    """
     audio, sr = sf.read(input_path, dtype='float64')
     info = sf.info(input_path)
     subtype = info.subtype
 
+    out_dir = Path(output_dir)
+    created_dir = not out_dir.exists()
     os.makedirs(output_dir, exist_ok=True)
 
     samples_per_beat = (60.0 / bpm) * sr
@@ -112,19 +123,47 @@ def split_audio_bars(input_path: str, output_dir: str, bpm: float,
     total_samples = audio.shape[0] if audio.ndim > 1 else len(audio)
     n_chunks = total_samples // samples_per_chunk
 
-    output_files = []
-    for i in range(n_chunks):
-        start = i * samples_per_chunk
-        end = start + samples_per_chunk
-        if audio.ndim > 1:
-            chunk = audio[start:end]
-        else:
-            chunk = audio[start:end]
+    output_files: list[str] = []
+    try:
+        for i in range(n_chunks):
+            start = i * samples_per_chunk
+            end = start + samples_per_chunk
+            if audio.ndim > 1:
+                chunk = audio[start:end]
+            else:
+                chunk = audio[start:end]
 
-        filename = f"bar_{i+1:04d}.wav"
-        out_path = str(Path(output_dir) / filename)
-        sf.write(out_path, chunk, sr, subtype=subtype)
-        output_files.append(out_path)
+            filename = f"bar_{i+1:04d}.wav"
+            out_path = str(Path(output_dir) / filename)
+            atomic_sf_write(out_path, chunk, sr, subtype=subtype)
+            output_files.append(out_path)
+    except BaseException:
+        # Roll back bars already written this call so the directory state
+        # is "all-or-nothing". Best-effort — never let cleanup mask the
+        # underlying error.
+        unlinked = 0
+        for p in output_files:
+            try:
+                Path(p).unlink()
+                unlinked += 1
+            except OSError:
+                pass
+        rmdir_ok = False
+        if created_dir:
+            try:
+                out_dir.rmdir()
+                rmdir_ok = True
+            except OSError:
+                pass
+        _log_event(
+            "split_audio_bars_rolled_back",
+            output_dir=str(out_dir),
+            bars_written=len(output_files),
+            bars_unlinked=unlinked,
+            dir_was_created_by_us=created_dir,
+            dir_removed=rmdir_ok,
+        )
+        raise
 
     return {
         "chunks": len(output_files),

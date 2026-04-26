@@ -7,6 +7,8 @@ import librosa
 import numpy as np
 import soundfile as sf
 
+from sas_processor.io_utils import atomic_sf_write
+
 
 @dataclass
 class TimeStretchResult:
@@ -93,8 +95,8 @@ def time_stretch_audio(
         else:
             duration_seconds = stretched.shape[0] / sr
 
-        # Write output preserving original format
-        sf.write(output_path, stretched, sr, subtype=subtype)
+        # Write output preserving original format (atomic — temp + replace).
+        atomic_sf_write(output_path, stretched, sr, subtype=subtype)
 
         return TimeStretchResult(
             success=True,

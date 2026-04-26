@@ -242,6 +242,247 @@ def test_cli_trim_range_accepts_fade_flags(tmp_path: Path) -> None:
     assert abs(data[-1]) < 0.01
 
 
+# -----------------------------------------------------------------------------
+# Fill effects: reverse / stutter / volume
+#
+# Each test pair MUST assert the length invariant (output samples ==
+# expected num_samples) AND a content-level property of the effect.
+# These effects power the transition-generator fill-variety engine, so
+# length preservation is non-negotiable — the mixer downstream assumes
+# every chop is exactly its destination-slot length.
+# -----------------------------------------------------------------------------
+
+
+def test_trim_range_reverse_preserves_length(tmp_path: Path) -> None:
+    """A reversed chop has the same sample count as a non-reversed chop."""
+    sr = 44100
+    bpm = 120.0
+    # Build a ramp so we can identify the reversed order in the output.
+    n = int(sr * 4)
+    ramp = np.linspace(-0.5, 0.5, n, dtype=np.float32)
+    src = tmp_path / "ramp.wav"
+    sf.write(src, ramp, sr, subtype="FLOAT")
+    out = tmp_path / "rev.wav"
+
+    result = trim_range(str(src), str(out), bpm=bpm, meter=4,
+                        start_beat=0, duration_beats=2, reverse=True)
+    assert result["samples"] == 44100           # 2 beats @ 120BPM @ 44.1kHz
+    assert result["reverse"] is True
+
+    data, _ = sf.read(str(out), always_2d=False)
+    assert abs(data.shape[0] - 44100) <= 1
+    # The first sample of the output is the LAST sample of the source chop
+    # (the ramp value at index 44099 — near the mid-point of the ramp
+    # because the chop is the first 2 beats = first half of the ramp).
+    expected_first = ramp[44099]
+    assert abs(data[0] - expected_first) < 1e-4
+
+
+@pytest.mark.parametrize("repeats", [2, 4, 8])
+def test_trim_range_stutter_preserves_length(tmp_path: Path, repeats: int) -> None:
+    """Every stutter repeat count preserves the total sample count."""
+    sr = 44100
+    bpm = 120.0
+    n = int(sr * 4)
+    signal = 0.3 * np.sin(2 * np.pi * 440 * np.arange(n) / sr).astype(np.float32)
+    src = tmp_path / "sine.wav"
+    sf.write(src, signal, sr, subtype="FLOAT")
+    out = tmp_path / f"stutter-{repeats}.wav"
+
+    result = trim_range(str(src), str(out), bpm=bpm, meter=4,
+                        start_beat=0, duration_beats=2,
+                        stutter_repeats=repeats)
+    assert result["samples"] == 44100
+    assert result["stutter_repeats"] == repeats
+
+    data, _ = sf.read(str(out), always_2d=False)
+    assert abs(data.shape[0] - 44100) <= 1
+    # Stutter preserves RMS (non-silent).
+    rms = float(np.sqrt(np.mean(data.astype(np.float64) ** 2)))
+    assert rms > 0.1
+
+
+def test_trim_range_stutter_eq_1_is_noop(tmp_path: Path) -> None:
+    """stutter_repeats=1 produces the same output as no stutter."""
+    sr = 44100
+    n = int(sr * 4)
+    signal = 0.3 * np.sin(2 * np.pi * 440 * np.arange(n) / sr).astype(np.float32)
+    src = tmp_path / "sine.wav"
+    sf.write(src, signal, sr, subtype="FLOAT")
+
+    out_no = tmp_path / "no-stutter.wav"
+    out_one = tmp_path / "stutter-1.wav"
+
+    trim_range(str(src), str(out_no), bpm=120.0, meter=4,
+               start_beat=0, duration_beats=2)
+    trim_range(str(src), str(out_one), bpm=120.0, meter=4,
+               start_beat=0, duration_beats=2, stutter_repeats=1)
+
+    a, _ = sf.read(str(out_no), always_2d=False)
+    b, _ = sf.read(str(out_one), always_2d=False)
+    assert np.allclose(a, b, atol=1e-6)
+
+
+def test_trim_range_stutter_first_slice_repeats(tmp_path: Path) -> None:
+    """Stutter tiles the FIRST (duration/N) samples N times."""
+    sr = 44100
+    n = int(sr * 4)
+    # Signed DC marker at start, zeros elsewhere — lets us verify the
+    # first slice is the thing being repeated.
+    signal = np.zeros(n, dtype=np.float32)
+    signal[:100] = 0.5   # first 100 samples = 0.5
+    src = tmp_path / "marker.wav"
+    sf.write(src, signal, sr, subtype="FLOAT")
+    out = tmp_path / "stutter.wav"
+
+    # Chop 2 beats = 44100 samples. Stutter x2 → each slice is 22050
+    # samples. First slice has marker at [0..100), second slice's marker
+    # starts at [22050..22150).
+    trim_range(str(src), str(out), bpm=120.0, meter=4,
+               start_beat=0, duration_beats=2, stutter_repeats=2)
+
+    data, _ = sf.read(str(out), always_2d=False)
+    assert data.shape[0] >= 22151
+    assert abs(data[50] - 0.5) < 1e-4               # first-slice marker
+    assert abs(data[22050 + 50] - 0.5) < 1e-4       # second-slice marker
+    # Mid-slice (past first 100 samples) should be zero.
+    assert abs(data[10000]) < 1e-4
+
+
+def test_trim_range_volume_scales_samples(tmp_path: Path) -> None:
+    """Volume=V multiplies every sample by V. Length preserved."""
+    sr = 44100
+    n = int(sr * 4)
+    signal = np.full(n, 0.5, dtype=np.float32)
+    src = tmp_path / "dc.wav"
+    sf.write(src, signal, sr, subtype="FLOAT")
+    out = tmp_path / "vol.wav"
+
+    result = trim_range(str(src), str(out), bpm=120.0, meter=4,
+                        start_beat=0, duration_beats=2, volume=0.4)
+    assert result["samples"] == 44100
+    assert result["volume"] == pytest.approx(0.4)
+
+    data, _ = sf.read(str(out), always_2d=False)
+    assert abs(data.shape[0] - 44100) <= 1
+    # All samples should be 0.5 * 0.4 = 0.2.
+    assert abs(data[0] - 0.2) < 1e-4
+    assert abs(data[10000] - 0.2) < 1e-4
+    assert abs(data[-1] - 0.2) < 1e-4
+
+
+def test_trim_range_volume_zero_produces_silence(tmp_path: Path) -> None:
+    """Volume=0 preserves length but produces silent output (kick-drop fill)."""
+    sr = 44100
+    n = int(sr * 4)
+    signal = 0.5 * np.sin(2 * np.pi * 440 * np.arange(n) / sr).astype(np.float32)
+    src = tmp_path / "sine.wav"
+    sf.write(src, signal, sr, subtype="FLOAT")
+    out = tmp_path / "silent.wav"
+
+    result = trim_range(str(src), str(out), bpm=120.0, meter=4,
+                        start_beat=0, duration_beats=1, volume=0.0)
+    assert result["samples"] == 22050
+
+    data, _ = sf.read(str(out), always_2d=False)
+    assert abs(data.shape[0] - 22050) <= 1
+    # RMS == 0 (within numerical epsilon).
+    rms = float(np.sqrt(np.mean(data.astype(np.float64) ** 2)))
+    assert rms < 1e-6
+
+
+def test_trim_range_combined_reverse_stutter_fade_volume_preserves_length(
+    tmp_path: Path,
+) -> None:
+    """All four fill effects combined still produce exactly num_samples."""
+    sr = 44100
+    n = int(sr * 4)
+    signal = 0.5 * np.sin(2 * np.pi * 440 * np.arange(n) / sr).astype(np.float32)
+    src = tmp_path / "sine.wav"
+    sf.write(src, signal, sr, subtype="FLOAT")
+    out = tmp_path / "all.wav"
+
+    result = trim_range(
+        str(src), str(out), bpm=120.0, meter=4,
+        start_beat=0, duration_beats=2,
+        fade_in_beats=0.25, fade_out_beats=0.25,
+        reverse=True, stutter_repeats=4, volume=0.7,
+    )
+    assert result["samples"] == 44100           # length invariant
+
+    data, _ = sf.read(str(out), always_2d=False)
+    assert abs(data.shape[0] - 44100) <= 1
+    # Output should still be non-silent overall (volume=0.7 * sine).
+    rms = float(np.sqrt(np.mean(data.astype(np.float64) ** 2)))
+    assert rms > 0.05
+
+
+def test_trim_range_invalid_stutter_repeats_raises(tmp_path: Path) -> None:
+    """stutter_repeats must be a positive integer."""
+    sr = 44100
+    samples = np.zeros(sr * 4, dtype=np.float32)
+    src = tmp_path / "z.wav"
+    sf.write(src, samples, sr, subtype="FLOAT")
+    out = tmp_path / "out.wav"
+
+    with pytest.raises(ValueError, match="stutter_repeats"):
+        trim_range(str(src), str(out), bpm=120.0, meter=4,
+                   start_beat=0, duration_beats=1, stutter_repeats=0)
+    with pytest.raises(ValueError, match="stutter_repeats"):
+        trim_range(str(src), str(out), bpm=120.0, meter=4,
+                   start_beat=0, duration_beats=1, stutter_repeats=-2)
+
+
+def test_trim_range_invalid_volume_raises(tmp_path: Path) -> None:
+    """volume must be in [0, 1]."""
+    sr = 44100
+    samples = np.zeros(sr * 4, dtype=np.float32)
+    src = tmp_path / "z.wav"
+    sf.write(src, samples, sr, subtype="FLOAT")
+    out = tmp_path / "out.wav"
+
+    with pytest.raises(ValueError, match="volume"):
+        trim_range(str(src), str(out), bpm=120.0, meter=4,
+                   start_beat=0, duration_beats=1, volume=-0.1)
+    with pytest.raises(ValueError, match="volume"):
+        trim_range(str(src), str(out), bpm=120.0, meter=4,
+                   start_beat=0, duration_beats=1, volume=1.01)
+
+
+def test_cli_trim_range_accepts_fill_flags(tmp_path: Path) -> None:
+    """CLI wires --reverse / --stutter-repeats / --volume through to trim_range."""
+    sr = 44100
+    samples = np.full(sr * 4, 0.5, dtype=np.float32)
+    src = tmp_path / "dc.wav"
+    sf.write(src, samples, sr, subtype="FLOAT")
+    out = tmp_path / "filled.wav"
+
+    proc = subprocess.run(
+        [sys.executable, "-m", "sas_processor.cli", "trim-range",
+         "--input", str(src),
+         "--output", str(out),
+         "--bpm", "120",
+         "--meter", "4",
+         "--start-beat", "0",
+         "--duration-beats", "2",
+         "--reverse",
+         "--stutter-repeats", "4",
+         "--volume", "0.5"],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert proc.returncode == 0, f"stderr: {proc.stderr}"
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert payload["success"] is True
+    assert payload["samples"] == 44100
+    assert payload["reverse"] is True
+    assert payload["stutter_repeats"] == 4
+    assert payload["volume"] == pytest.approx(0.5)
+
+
+# -----------------------------------------------------------------------------
+# Subtype preservation (regression guard)
+# -----------------------------------------------------------------------------
+
 @pytest.mark.parametrize("subtype", ["PCM_16", "PCM_24", "FLOAT"])
 def test_trim_range_preserves_input_subtype(tmp_path: Path, subtype: str) -> None:
     """Regression: chops MUST inherit the input WAV's subtype (bit depth /

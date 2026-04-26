@@ -7,6 +7,8 @@ import numpy.typing as npt
 import soundfile as sf
 import librosa
 
+from sas_processor.io_utils import atomic_sf_write
+
 
 AudioData = npt.NDArray[np.float64]
 
@@ -19,8 +21,8 @@ def _load(input_path: str) -> Tuple[AudioData, int, str]:
 
 
 def _save(audio: AudioData, output_path: str, sr: int, subtype: str) -> None:
-    """Save audio preserving format."""
-    sf.write(output_path, audio, sr, subtype=subtype)
+    """Save audio preserving format. Atomic — temp + replace."""
+    atomic_sf_write(output_path, audio, sr, subtype=subtype)
 
 
 def _apply_pedalboard_effect(effects: List[Any], input_path: str,

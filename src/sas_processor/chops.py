@@ -17,15 +17,22 @@ Design notes:
     Used by the transition generator for sample crossfades (scene-A
     samples fade out, scene-B samples fade in across the transition)
     and by LLM-emitted events that want a soft overlap between layers.
+  - Optional `reverse`, `stutter_repeats`, and `volume` fill effects.
+    These are first-class TransitionEvent fields in the plan JSON so
+    re-rendering is deterministic. All three preserve the chop's total
+    sample count (the "length invariant") — only content changes.
+    Order of operations: trim → reverse → stutter → fades → volume.
 """
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 
 import numpy as np
 import soundfile as sf
 
+from sas_processor.io_utils import _log_event, atomic_sf_write
 from sas_processor.processor import trim_audio
 
 
@@ -38,6 +45,9 @@ def trim_range(
     duration_beats: float,
     fade_in_beats: float = 0.0,
     fade_out_beats: float = 0.0,
+    reverse: bool = False,
+    stutter_repeats: int = 1,
+    volume: float = 1.0,
 ) -> dict:
     """Write a chop of `duration_beats` starting at `start_beat` from `input_path`.
 
@@ -53,14 +63,23 @@ def trim_range(
                          `fade_in_beats` beats of the chop. Default 0 (no fade).
         fade_out_beats:  If > 0, apply a linear fade from 1 → 0 over the last
                          `fade_out_beats` beats of the chop. Default 0 (no fade).
+        reverse:         If True, reverse the trimmed chop along the time axis
+                         BEFORE applying fades. Preserves length. Used by the
+                         "reverse sweep" fill at the end of scene A.
+        stutter_repeats: If > 1, tile the chop's first (num_samples / N) samples
+                         N times to fill exactly `num_samples`. Used by the
+                         "stutter roll" fill. N=1 (default) is a no-op.
+        volume:          Scalar gain (0..1) applied to the final chop AFTER
+                         fades and stutter. Used for ghost hits (0.4) and kick
+                         drops (0.0). Default 1.0 (no change).
 
     Returns:
         Dict with `output`, `samples`, `duration_s`, `sample_rate`,
-        `channels`, `start_sample`, `fade_in_samples`, `fade_out_samples`.
-        Suitable for emit_json.
+        `channels`, `start_sample`, `fade_in_samples`, `fade_out_samples`,
+        `reverse`, `stutter_repeats`, `volume`. Suitable for emit_json.
 
     Raises:
-        ValueError  on invalid bpm / meter / duration / fade args.
+        ValueError  on invalid bpm / meter / duration / fade / fill args.
         FileNotFoundError on missing input.
     """
     if bpm <= 0:
@@ -80,6 +99,12 @@ def trim_range(
             f"fade_in_beats ({fade_in_beats}) + fade_out_beats ({fade_out_beats}) "
             f"must not exceed duration_beats ({duration_beats})"
         )
+    if not isinstance(stutter_repeats, (int, np.integer)) or stutter_repeats < 1:
+        raise ValueError(
+            f"stutter_repeats must be a positive integer, got {stutter_repeats!r}"
+        )
+    if not (0.0 <= volume <= 1.0):
+        raise ValueError(f"volume must be in [0, 1], got {volume}")
 
     src = Path(input_path)
     if not src.exists():
@@ -103,12 +128,44 @@ def trim_range(
 
     chop = trim_audio(audio, start_sample, num_samples)
 
+    if reverse:
+        # Stride-flip on the time axis. Copy to detach from the negative
+        # stride view — downstream ops (fade, volume) allocate a new array
+        # anyway, but the copy is cheap and avoids any stride surprises.
+        chop = chop[::-1].copy()
+
+    if stutter_repeats > 1:
+        chop = _apply_stutter(chop, num_samples, stutter_repeats)
+
     if fade_in_samples > 0 or fade_out_samples > 0:
         chop = _apply_linear_fades(chop, fade_in_samples, fade_out_samples)
 
+    if volume != 1.0:
+        chop = _apply_volume(chop, volume)
+
     out = Path(output_path)
+    # Track whether we created the parent dir so we can roll it back on
+    # write failure without disturbing a directory the caller already had.
+    created_parent = not out.parent.exists()
     out.parent.mkdir(parents=True, exist_ok=True)
-    sf.write(output_path, chop, sr, subtype=src_info.subtype)
+    try:
+        atomic_sf_write(output_path, chop, sr, subtype=src_info.subtype)
+    except BaseException:
+        if created_parent:
+            # Best-effort rollback. rmdir only succeeds if the dir is empty
+            # (the atomic-write helper already removed its temp on failure),
+            # which is exactly the safe condition.
+            rmdir_ok = True
+            try:
+                out.parent.rmdir()
+            except OSError:
+                rmdir_ok = False
+            _log_event(
+                "trim_range_parent_dir_rollback",
+                parent_dir=str(out.parent),
+                rmdir_ok=rmdir_ok,
+            )
+        raise
 
     channels = 1 if chop.ndim == 1 else int(chop.shape[1])
 
@@ -121,6 +178,9 @@ def trim_range(
         "start_sample": start_sample,
         "fade_in_samples": fade_in_samples,
         "fade_out_samples": fade_out_samples,
+        "reverse": bool(reverse),
+        "stutter_repeats": int(stutter_repeats),
+        "volume": float(volume),
     }
 
 
@@ -175,4 +235,74 @@ def _apply_linear_fades(
     # needed. We use astype to match the input dtype exactly.
     if np.issubdtype(original_dtype, np.floating):
         return work.astype(original_dtype)
+    return work.astype(original_dtype)
+
+
+def _apply_stutter(
+    audio: np.ndarray,
+    num_samples: int,
+    stutter_repeats: int,
+) -> np.ndarray:
+    """Tile the chop's first (num_samples // N) samples N times to fill
+    exactly `num_samples`.
+
+    The "stutter" fill effect: a single short slice of audio is repeated
+    N times across the same destination slot, producing classic drum-roll
+    stutter. The resulting array is trimmed back to `num_samples` so the
+    length invariant holds (tile rounding never adds samples beyond the
+    original request).
+
+    Works on mono (1-D) and stereo (2-D, shape (n, channels)) buffers.
+    Returns a new array — does not mutate the input.
+    """
+    if stutter_repeats <= 1:
+        return audio
+    if audio.size == 0:
+        return audio
+
+    slice_samples = num_samples // stutter_repeats
+    if slice_samples <= 0:
+        # Degenerate case: stutter count exceeds sample budget. Return
+        # the unchanged audio rather than producing an empty result — the
+        # length invariant matters more than the fill firing.
+        return audio
+
+    if audio.ndim == 1:
+        one = audio[:slice_samples]
+        tiled = np.tile(one, stutter_repeats)
+    else:
+        one = audio[:slice_samples, :]
+        tiled = np.tile(one, (stutter_repeats, 1))
+
+    # Integer division can UNDER-shoot num_samples (e.g. 44100 // 8 = 5512,
+    # tiled × 8 = 44096). Pad the tail with zeros to land on exactly
+    # num_samples so the length invariant holds for any N.
+    if tiled.shape[0] < num_samples:
+        pad = num_samples - tiled.shape[0]
+        if audio.ndim == 1:
+            tiled = np.concatenate([tiled, np.zeros(pad, dtype=audio.dtype)])
+        else:
+            channels = audio.shape[1]
+            tiled = np.concatenate(
+                [tiled, np.zeros((pad, channels), dtype=audio.dtype)], axis=0
+            )
+
+    # If tile still over-shot (shouldn't, but belt + suspenders) trim back.
+    return tiled[:num_samples]
+
+
+def _apply_volume(audio: np.ndarray, volume: float) -> np.ndarray:
+    """Scalar-multiply the audio buffer by `volume` (0..1).
+
+    Works in float64 to avoid integer overflow, then casts back to the
+    input dtype. For float inputs the intermediate cast is still done
+    but is effectively free (astype is a no-op when dtype matches).
+    """
+    if volume == 1.0:
+        return audio
+    if audio.size == 0:
+        return audio
+
+    original_dtype = audio.dtype
+    work = audio.astype(np.float64, copy=True) * volume
     return work.astype(original_dtype)

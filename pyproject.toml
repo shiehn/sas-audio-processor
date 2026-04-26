@@ -8,9 +8,9 @@ version = "2.0.0"
 description = "Audio processor for beat detection and bar-aligned trimming"
 readme = "README.md"
 requires-python = ">=3.9"
-license = {text = "MIT"}
+license = {text = "GPL-3.0-or-later"}
 authors = [
-    {name = "SAS Audio"}
+    {name = "Signals & Sorcery"}
 ]
 
 dependencies = [

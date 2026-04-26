@@ -25,6 +25,40 @@ cd /Users/stevehiehn/sas-platform/sas-audio-processor && source venv/bin/activat
 
 ---
 
+## Rebuild & Stage Rule (CRITICAL - ALWAYS REBUILD AFTER CHANGES)
+
+**⚠️ After ANY code change here, you MUST rebuild the PyInstaller binary and stage it into `sas-assistant/resources/`. Skipping this means `npm run` / `npm run dev` / `npm run release` in sas-assistant will silently use the OLD binary, and your change will appear to have no effect. ⚠️**
+
+This is the #1 cause of "I fixed the bug but it still happens" in this repo. Tests passing here is necessary but NOT sufficient — the Electron app spawns the pre-built `sas-processor` binary from `resources/`, not the Python source.
+
+### Required after every change
+
+```bash
+cd ../sas-assistant && npm run build:native:processor
+```
+
+This builds for the current architecture and copies into `sas-assistant/resources/audio-processor/{arm64,x86_64}/`.
+
+To verify the staged binary is present and valid:
+```bash
+cd ../sas-assistant && npm run verify-resources
+```
+
+For a release (both architectures):
+```bash
+cd ../sas-assistant && npm run build:native   # all natives, current arch
+# or `npm run release` which handles both arm64 and x86_64
+```
+
+### Workflow checklist
+1. Make change in `sas-audio-processor`
+2. Run tests here (per above)
+3. **Rebuild + stage** via `cd ../sas-assistant && npm run build:native:processor`
+4. Test in the Electron app (`cd ../sas-assistant && npm run dev`)
+5. Do NOT consider the change done until step 3 has run.
+
+---
+
 ## Architecture
 
 ```

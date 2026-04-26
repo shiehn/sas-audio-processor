@@ -1,7 +1,9 @@
 """Command-line interface for SAS Audio Processor."""
 
+import atexit
 import functools
 import json
+import signal
 import sys
 from pathlib import Path
 from typing import Any, Callable, TypeVar
@@ -9,8 +11,43 @@ from typing import Any, Callable, TypeVar
 import click
 
 from sas_processor import __version__ as PROCESSOR_VERSION
+from sas_processor.io_utils import cleanup_inflight_temps
 
 F = TypeVar('F', bound=Callable[..., Any])
+
+
+# Registered at import time so the cleanup runs on Click invocation, on
+# crash, on SIGTERM (Node spawn timeout / Electron quit), and on SIGINT
+# (Ctrl-C in dev). The cleanup is idempotent — safe to fire from multiple
+# paths (signal handler then atexit, etc).
+def _on_terminating_signal(signum: int, frame: Any) -> None:
+    cleanup_inflight_temps()
+    # Conventional exit code: 128 + signal number. SIGTERM=15 → 143;
+    # SIGINT=2 → 130. This matches what shells report.
+    sys.exit(128 + signum)
+
+
+def _install_signal_handlers() -> None:
+    # SIGTERM: Node child_process timeout → SIGTERM, Electron quit → SIGTERM.
+    # SIGINT:  Ctrl-C in dev runs.
+    # SIGHUP (Unix only): terminal closed.
+    # SIGKILL is uncatchable by definition — temps from an OOM-killed run
+    # can only be reclaimed by an external sweeper (out of scope here).
+    for sig_name in ("SIGTERM", "SIGINT", "SIGHUP"):
+        sig = getattr(signal, sig_name, None)
+        if sig is None:
+            continue
+        try:
+            signal.signal(sig, _on_terminating_signal)
+        except (ValueError, OSError):
+            # ValueError is raised when called from a non-main thread (won't
+            # happen in the CLI entry path, but be defensive). OSError can
+            # happen on platforms that disallow trapping a particular sig.
+            continue
+
+
+_install_signal_handlers()
+atexit.register(cleanup_inflight_temps)
 
 
 def emit_json(data: dict) -> None:
@@ -143,6 +180,10 @@ def trim(input_path: str, output_path: str, bpm: float, bars: int,
     )
 
     if result.success:
+        # Cue-point sidecar — sample positions are relative to the TRIMMED
+        # output (the file at `output`), not the input. The first beat is
+        # always 0 (the trim starts at the detected downbeat). Consumers
+        # use this to draw beat ticks + drive snap-to-beat alignment.
         emit_json({
             "type": "trim",
             "success": True,
@@ -150,7 +191,13 @@ def trim(input_path: str, output_path: str, bpm: float, bars: int,
             "downbeat_time": round(result.downbeat_time, 4),
             "original_duration": round(result.original_duration, 4),
             "output_duration": round(result.output_duration, 4),
-            "sample_rate": result.sample_rate
+            "sample_rate": result.sample_rate,
+            "detected_bpm": (
+                round(result.detected_bpm, 4)
+                if result.detected_bpm is not None else None
+            ),
+            "output_beats": result.output_beats,
+            "downbeat_sample": result.output_beats[0] if result.output_beats else 0,
         })
     else:
         emit_error(result.error_code or "PROCESSING_ERROR",
@@ -475,6 +522,15 @@ def split_bars(input_path: str, output_dir: str, bpm: float,
               help='Linear fade-in over the first N beats of the chop (default: 0, no fade)')
 @click.option('--fade-out-beats', default=0.0, type=float,
               help='Linear fade-out over the last N beats of the chop (default: 0, no fade)')
+@click.option('--reverse/--no-reverse', default=False,
+              help='Reverse the chop along the time axis before applying fades. '
+                   'Used by the "reverse sweep" fill. Preserves length.')
+@click.option('--stutter-repeats', default=1, type=int,
+              help='If >1, tile the chop\'s first (duration/N) into N repeats '
+                   'to produce a stutter roll. Preserves length.')
+@click.option('--volume', default=1.0, type=float,
+              help='Scalar gain (0..1) applied AFTER fades and stutter. '
+                   'Used for ghost hits / kick drops.')
 @handle_cli_errors("TRIM_RANGE_ERROR")
 def trim_range_cmd(
     input_path: str,
@@ -485,6 +541,9 @@ def trim_range_cmd(
     duration_beats: float,
     fade_in_beats: float,
     fade_out_beats: float,
+    reverse: bool,
+    stutter_repeats: int,
+    volume: float,
 ) -> None:
     """Extract a beat-aligned chop from a source WAV (for transition generator)."""
     _validate_input_file(input_path)
@@ -492,6 +551,7 @@ def trim_range_cmd(
     result = trim_range(
         input_path, output_path, bpm, meter, start_beat, duration_beats,
         fade_in_beats=fade_in_beats, fade_out_beats=fade_out_beats,
+        reverse=reverse, stutter_repeats=stutter_repeats, volume=volume,
     )
     emit_json({"type": "trim-range", "success": True, **result})
 

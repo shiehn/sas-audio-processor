@@ -217,6 +217,110 @@ class TestProcessAudio:
         assert info.samplerate == 48000
 
 
+class TestProcessAudioCuePoints:
+    """Migration 060 / Phase 1c: trim emits beat positions inside the trimmed output."""
+
+    def test_output_beats_are_relative_to_trimmed_output(self, tmp_path: Path) -> None:
+        """Beat 0 of the output is bar 1 / beat 1 — always at sample 0 by construction."""
+        input_path = str(tmp_path / "input.wav")
+        output_path = str(tmp_path / "output.wav")
+
+        create_test_wav_with_beats(input_path, bpm=120, bars=8)
+
+        result = process_audio(
+            input_path=input_path,
+            output_path=output_path,
+            bpm=120,
+            bars=4,
+        )
+
+        assert result.success
+        # Output beats are populated and ascending
+        assert isinstance(result.output_beats, list)
+        assert len(result.output_beats) > 0
+        # The first detected beat in the trimmed output is at offset 0
+        # (the trim begins at the detected downbeat).
+        assert result.output_beats[0] == 0
+        # Strictly increasing
+        for prev, cur in zip(result.output_beats, result.output_beats[1:]):
+            assert cur > prev
+
+    def test_output_beats_stay_inside_output_range(self, tmp_path: Path) -> None:
+        """No beat may fall outside [0, num_output_samples)."""
+        input_path = str(tmp_path / "input.wav")
+        output_path = str(tmp_path / "output.wav")
+
+        create_test_wav_with_beats(input_path, bpm=120, bars=8)
+
+        result = process_audio(
+            input_path=input_path,
+            output_path=output_path,
+            bpm=120,
+            bars=4,
+        )
+
+        assert result.success
+        # Re-derive the output sample count from BPM/bars/sr to verify
+        # the bound holds even though the result doesn't return it directly.
+        samples_per_beat = (60.0 / 120) * result.sample_rate
+        num_output_samples = int(samples_per_beat * 4 * 4)  # 4 bars × 4 beats
+        for s in result.output_beats:
+            assert 0 <= s < num_output_samples
+
+    def test_detected_bpm_is_surfaced(self, tmp_path: Path) -> None:
+        """detected_bpm is populated (today equals the input BPM)."""
+        input_path = str(tmp_path / "input.wav")
+        output_path = str(tmp_path / "output.wav")
+
+        create_test_wav_with_beats(input_path, bpm=125, bars=8)
+
+        result = process_audio(
+            input_path=input_path,
+            output_path=output_path,
+            bpm=125,
+            bars=4,
+        )
+
+        assert result.success
+        assert result.detected_bpm == pytest.approx(125.0)
+
+    def test_output_beats_count_roughly_matches_bars_times_meter(
+        self, tmp_path: Path
+    ) -> None:
+        """
+        For a 4-bar output in 4/4, expect ~16 beats. Detection isn't always
+        sample-perfect so we allow ±2 slack to keep the test stable across
+        librosa versions.
+        """
+        input_path = str(tmp_path / "input.wav")
+        output_path = str(tmp_path / "output.wav")
+
+        create_test_wav_with_beats(input_path, bpm=120, bars=8)
+
+        result = process_audio(
+            input_path=input_path,
+            output_path=output_path,
+            bpm=120,
+            bars=4,
+        )
+
+        assert result.success
+        # 4 bars × 4 beats = 16, allow ±2 for librosa edge effects
+        assert 14 <= len(result.output_beats) <= 18
+
+    def test_failure_path_leaves_cue_fields_at_defaults(self, tmp_path: Path) -> None:
+        """An error result should not produce stale beat data."""
+        result = process_audio(
+            input_path=str(tmp_path / "nope.wav"),
+            output_path=str(tmp_path / "out.wav"),
+            bpm=120,
+            bars=4,
+        )
+        assert not result.success
+        assert result.output_beats == []
+        assert result.detected_bpm is None
+
+
 class TestProcessAudioIOErrors:
     """Tests for I/O error handling in process_audio."""
 
