@@ -6,7 +6,7 @@ import json
 import signal
 import sys
 from pathlib import Path
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable, Optional, TypeVar
 
 import click
 
@@ -184,6 +184,9 @@ def trim(input_path: str, output_path: str, bpm: float, bars: int,
         # output (the file at `output`), not the input. The first beat is
         # always 0 (the trim starts at the detected downbeat). Consumers
         # use this to draw beat ticks + drive snap-to-beat alignment.
+        # `input_beats` mirrors the same beats in the INPUT file's sample
+        # coordinates — used by the trim-editor UI to render snap targets
+        # over the un-trimmed waveform.
         emit_json({
             "type": "trim",
             "success": True,
@@ -197,6 +200,8 @@ def trim(input_path: str, output_path: str, bpm: float, bars: int,
                 if result.detected_bpm is not None else None
             ),
             "output_beats": result.output_beats,
+            "input_beats": result.input_beats,
+            "input_start_sample": result.input_start_sample,
             "downbeat_sample": result.output_beats[0] if result.output_beats else 0,
         })
     else:
@@ -514,10 +519,17 @@ def split_bars(input_path: str, output_dir: str, bpm: float,
 @click.option('--bpm', required=True, type=float, help='BPM of the input stem')
 @click.option('--meter', default=4, type=int,
               help='Beats per bar (default: 4)')
-@click.option('--start-beat', required=True, type=float,
-              help='Beat offset from start of input (0-indexed)')
-@click.option('--duration-beats', required=True, type=float,
-              help='Length of chop in beats (v1 uses 1, 2, or 4)')
+@click.option('--start-beat', default=0.0, type=float,
+              help='Beat offset from start of input (0-indexed). '
+                   'Ignored when --start-sample is provided.')
+@click.option('--duration-beats', default=0.0, type=float,
+              help='Length of chop in beats (v1 uses 1, 2, or 4). '
+                   'Ignored when --duration-samples is provided.')
+@click.option('--start-sample', 'start_sample', type=int, default=None,
+              help='Sample-precise start offset in input. Overrides --start-beat. '
+                   'Used by the audio-texture trim editor for sub-beat precision.')
+@click.option('--duration-samples', 'duration_samples', type=int, default=None,
+              help='Sample-precise chop length. Overrides --duration-beats.')
 @click.option('--fade-in-beats', default=0.0, type=float,
               help='Linear fade-in over the first N beats of the chop (default: 0, no fade)')
 @click.option('--fade-out-beats', default=0.0, type=float,
@@ -539,6 +551,8 @@ def trim_range_cmd(
     meter: int,
     start_beat: float,
     duration_beats: float,
+    start_sample: Optional[int],
+    duration_samples: Optional[int],
     fade_in_beats: float,
     fade_out_beats: float,
     reverse: bool,
@@ -547,11 +561,26 @@ def trim_range_cmd(
 ) -> None:
     """Extract a beat-aligned chop from a source WAV (for transition generator)."""
     _validate_input_file(input_path)
+    # Caller must supply either beat- or sample-precision duration. Start is
+    # optional (defaults to 0).
+    if duration_samples is None and duration_beats <= 0:
+        emit_error(
+            "INVALID_DURATION",
+            "Either --duration-beats or --duration-samples must be provided",
+        )
+        sys.exit(1)
     from sas_processor.chops import trim_range
+    # trim_range validates start_beat/duration_beats independently of the
+    # sample overrides, so pass placeholders when overrides are present.
+    safe_start_beat = 0.0 if start_sample is not None else start_beat
+    safe_duration_beats = 1.0 if duration_samples is not None else duration_beats
     result = trim_range(
-        input_path, output_path, bpm, meter, start_beat, duration_beats,
+        input_path, output_path, bpm, meter,
+        safe_start_beat, safe_duration_beats,
         fade_in_beats=fade_in_beats, fade_out_beats=fade_out_beats,
         reverse=reverse, stutter_repeats=stutter_repeats, volume=volume,
+        start_sample_override=start_sample,
+        duration_samples_override=duration_samples,
     )
     emit_json({"type": "trim-range", "success": True, **result})
 

@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import contextlib
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import soundfile as sf
@@ -48,6 +49,8 @@ def trim_range(
     reverse: bool = False,
     stutter_repeats: int = 1,
     volume: float = 1.0,
+    start_sample_override: Optional[int] = None,
+    duration_samples_override: Optional[int] = None,
 ) -> dict:
     """Write a chop of `duration_beats` starting at `start_beat` from `input_path`.
 
@@ -72,6 +75,12 @@ def trim_range(
         volume:          Scalar gain (0..1) applied to the final chop AFTER
                          fades and stutter. Used for ghost hits (0.4) and kick
                          drops (0.0). Default 1.0 (no change).
+        start_sample_override:    If provided, use this exact sample offset
+                                  instead of computing one from `start_beat`.
+                                  Used by the trim-editor UI which speaks in
+                                  raw-sample positions for sub-beat precision.
+        duration_samples_override: If provided, use this exact sample count
+                                   instead of computing from `duration_beats`.
 
     Returns:
         Dict with `output`, `samples`, `duration_s`, `sample_rate`,
@@ -105,6 +114,15 @@ def trim_range(
         )
     if not (0.0 <= volume <= 1.0):
         raise ValueError(f"volume must be in [0, 1], got {volume}")
+    if start_sample_override is not None and start_sample_override < 0:
+        raise ValueError(
+            f"start_sample_override must be >= 0, got {start_sample_override}"
+        )
+    if duration_samples_override is not None and duration_samples_override <= 0:
+        raise ValueError(
+            f"duration_samples_override must be > 0, "
+            f"got {duration_samples_override}"
+        )
 
     src = Path(input_path)
     if not src.exists():
@@ -121,8 +139,14 @@ def trim_range(
     src_info = sf.info(input_path)
 
     samples_per_beat = (60.0 / bpm) * sr
-    start_sample = int(round(start_beat * samples_per_beat))
-    num_samples = int(round(duration_beats * samples_per_beat))
+    if start_sample_override is not None:
+        start_sample = int(start_sample_override)
+    else:
+        start_sample = int(round(start_beat * samples_per_beat))
+    if duration_samples_override is not None:
+        num_samples = int(duration_samples_override)
+    else:
+        num_samples = int(round(duration_beats * samples_per_beat))
     fade_in_samples = int(round(fade_in_beats * samples_per_beat))
     fade_out_samples = int(round(fade_out_beats * samples_per_beat))
 

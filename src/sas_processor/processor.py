@@ -31,6 +31,14 @@ class ProcessingResult:
     # (offset 0 by construction — we trim starting at the detected downbeat).
     # Empty when detection failed or insufficient beats were found.
     output_beats: List[int] = field(default_factory=list)
+    # Beat positions in the INPUT (raw) file's sample coordinates. Used by
+    # downstream "edit trim window" UI to draw snap targets on the full
+    # un-trimmed waveform without having to re-run beat detection.
+    input_beats: List[int] = field(default_factory=list)
+    # Start sample of the auto-detected trim inside the input file.
+    # Same value as the first entry of `output_beats` would be if the
+    # trim were viewed in raw-domain coordinates.
+    input_start_sample: int = 0
     detected_bpm: Optional[float] = None
     error: Optional[str] = None
     error_code: Optional[str] = None
@@ -349,7 +357,13 @@ def process_audio(
         # falling inside `[0, num_samples)`. The first beat (bar 1, beat 1)
         # is always 0 by construction.
         output_beats: list[int] = []
+        # Raw-domain beats are the same beat samples without shifting —
+        # the trim editor needs these to draw snap targets on the full
+        # un-trimmed waveform without re-running beat detection.
+        input_beats: list[int] = []
         if len(beat_samples) > 0:
+            for s in beat_samples.astype(np.int64):
+                input_beats.append(int(s))
             shifted = beat_samples.astype(np.int64) - int(downbeat_sample)
             for s in shifted:
                 s_int = int(s)
@@ -399,6 +413,8 @@ def process_audio(
             output_duration=output_duration,
             sample_rate=sr,
             output_beats=output_beats,
+            input_beats=input_beats,
+            input_start_sample=int(downbeat_sample),
             # Phase 1c: BPM was a known input, not detected from audio. We
             # still surface it so consumers can warn on mismatch later
             # (when we plug detection back in). Today this is the input BPM

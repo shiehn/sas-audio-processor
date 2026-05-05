@@ -533,6 +533,142 @@ def test_cli_trim_range_emits_json(sine_4bar_120bpm: Path, tmp_path: Path) -> No
     assert Path(payload["output"]).exists()
 
 
+# -----------------------------------------------------------------------------
+# Sample-precision overrides (audio-texture trim editor path)
+# -----------------------------------------------------------------------------
+
+def test_trim_range_sample_override_exact_count(tmp_path: Path) -> None:
+    """--start-sample / --duration-samples produce a chop of exactly that
+    sample count, ignoring the beat args."""
+    sr = 44100
+    n = sr * 4
+    ramp = np.linspace(-0.5, 0.5, n, dtype=np.float32)
+    src = tmp_path / "ramp.wav"
+    sf.write(src, ramp, sr, subtype="FLOAT")
+    out = tmp_path / "chop.wav"
+
+    # 12345 samples starting at 17 — values that cannot fall on any
+    # beat boundary at 120 BPM (22050 samples/beat).
+    result = trim_range(
+        str(src), str(out), bpm=120.0, meter=4,
+        start_beat=0, duration_beats=1,
+        start_sample_override=17, duration_samples_override=12345,
+    )
+    assert result["samples"] == 12345
+    assert result["start_sample"] == 17
+    data, _ = sf.read(str(out), always_2d=False)
+    assert data.shape[0] == 12345
+    # First sample is ramp[17].
+    assert abs(data[0] - ramp[17]) < 1e-4
+
+
+def test_trim_range_sample_override_validates_bounds(tmp_path: Path) -> None:
+    sr = 44100
+    samples = np.zeros(sr, dtype=np.float32)
+    src = tmp_path / "z.wav"
+    sf.write(src, samples, sr, subtype="FLOAT")
+    out = tmp_path / "out.wav"
+    with pytest.raises(ValueError, match="start_sample_override"):
+        trim_range(
+            str(src), str(out), bpm=120.0, meter=4,
+            start_beat=0, duration_beats=1,
+            start_sample_override=-1,
+        )
+    with pytest.raises(ValueError, match="duration_samples_override"):
+        trim_range(
+            str(src), str(out), bpm=120.0, meter=4,
+            start_beat=0, duration_beats=1,
+            duration_samples_override=0,
+        )
+
+
+def test_cli_trim_range_sample_override(tmp_path: Path) -> None:
+    """CLI wires --start-sample / --duration-samples through end-to-end."""
+    sr = 44100
+    samples = np.full(sr * 4, 0.5, dtype=np.float32)
+    src = tmp_path / "dc.wav"
+    sf.write(src, samples, sr, subtype="FLOAT")
+    out = tmp_path / "sample-trim.wav"
+
+    proc = subprocess.run(
+        [sys.executable, "-m", "sas_processor.cli", "trim-range",
+         "--input", str(src),
+         "--output", str(out),
+         "--bpm", "120",
+         "--meter", "4",
+         "--start-sample", "9999",
+         "--duration-samples", "33333"],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert proc.returncode == 0, f"stderr: {proc.stderr}"
+    payload = json.loads(proc.stdout.strip().splitlines()[-1])
+    assert payload["success"] is True
+    assert payload["samples"] == 33333
+    assert payload["start_sample"] == 9999
+    data, _ = sf.read(str(out), always_2d=False)
+    assert data.shape[0] == 33333
+
+
+def test_cli_trim_range_requires_duration(tmp_path: Path) -> None:
+    """CLI errors when neither --duration-beats nor --duration-samples is supplied."""
+    sr = 44100
+    samples = np.zeros(sr, dtype=np.float32)
+    src = tmp_path / "z.wav"
+    sf.write(src, samples, sr, subtype="FLOAT")
+    out = tmp_path / "out.wav"
+
+    proc = subprocess.run(
+        [sys.executable, "-m", "sas_processor.cli", "trim-range",
+         "--input", str(src),
+         "--output", str(out),
+         "--bpm", "120",
+         "--meter", "4"],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert proc.returncode != 0
+    assert "INVALID_DURATION" in proc.stderr
+
+
+def test_cli_trim_emits_input_beats(tmp_path: Path) -> None:
+    """Regression: the `trim` event includes input_beats + input_start_sample
+    (consumed by the audio-texture trim editor's snap targets)."""
+    sr = 44100
+    bpm = 120.0
+    bars = 4
+    duration_s = (60.0 / bpm) * 4 * bars
+    n = int(sr * duration_s)
+    t = np.arange(n) / sr
+    sine = (0.25 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+    src = tmp_path / "in.wav"
+    sf.write(src, sine, sr, subtype="FLOAT")
+    out = tmp_path / "trim.wav"
+
+    proc = subprocess.run(
+        [sys.executable, "-m", "sas_processor.cli", "trim",
+         "--input", str(src),
+         "--output", str(out),
+         "--bpm", "120",
+         "--bars", "2",
+         "--meter", "4"],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert proc.returncode == 0, f"stderr: {proc.stderr}"
+    # The trim event is the last JSON line where type == "trim".
+    last_trim = None
+    for line in proc.stdout.strip().splitlines():
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if payload.get("type") == "trim":
+            last_trim = payload
+    assert last_trim is not None
+    assert "input_beats" in last_trim
+    assert isinstance(last_trim["input_beats"], list)
+    assert "input_start_sample" in last_trim
+    assert isinstance(last_trim["input_start_sample"], int)
+
+
 def test_cli_trim_range_reports_error_on_missing_input(tmp_path: Path) -> None:
     out = tmp_path / "chop.wav"
     proc = subprocess.run(
